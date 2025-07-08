@@ -25,7 +25,7 @@ The Cross-Platform Compatibility example covers:
 ### Complete Cross-Platform Game Launcher
 
 ```typescript
-import { GameLauncher, Platform } from 'game-launcher';
+import { GameLauncher, Platform } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';

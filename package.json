@@ -32,6 +32,18 @@
 		"cross-platform",
 		"nodejs"
 	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/team-falkor/game-launcher.git"
+	},
+	"homepage": "https://github.com/team-falkor/game-launcher#readme",
+	"bugs": {
+		"url": "https://github.com/team-falkor/game-launcher/issues"
+	},
+	"files": [
+		"dist/**/*",
+		"README.md"
+	],
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.6",
 		"@types/bun": "latest",

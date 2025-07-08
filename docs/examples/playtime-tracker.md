@@ -24,7 +24,7 @@ The Playtime Tracker example covers:
 ### Complete Playtime Tracker
 
 ```typescript
-import { GameLauncher, GameStatus } from 'game-launcher';
+import { GameLauncher, GameStatus } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';

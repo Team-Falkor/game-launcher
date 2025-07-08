@@ -259,7 +259,7 @@ type GameStatus =
 ### Basic Event Handling
 
 ```typescript
-import GameLauncher from 'game-launcher';
+import GameLauncher from '@team-falkor/game-launcher';
 
 const launcher = new GameLauncher();
 

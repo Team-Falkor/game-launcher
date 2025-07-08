@@ -39,7 +39,7 @@ The library includes built-in TypeScript definitions. No additional `@types` pac
 
 ```typescript
 // TypeScript - full type support
-import { GameLauncher, GameLauncherOptions } from 'game-launcher';
+import { GameLauncher, GameLauncherOptions } from '@team-falkor/game-launcher';
 
 // JavaScript - works too!
 const { GameLauncher } = require('game-launcher');
@@ -50,7 +50,7 @@ const { GameLauncher } = require('game-launcher');
 Here's a minimal example to get you started:
 
 ```typescript
-import { GameLauncher } from 'game-launcher';
+import { GameLauncher } from '@team-falkor/game-launcher';
 
 // Create a launcher instance
 const launcher = new GameLauncher();
@@ -502,7 +502,7 @@ const gameId = await launcher.launchGame({
 });
 
 // ✅ Better: Validate executable first
-import { validateExecutable } from 'game-launcher';
+import { validateExecutable } from '@team-falkor/game-launcher';
 
 try {
   await validateExecutable('./game.exe');

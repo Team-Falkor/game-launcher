@@ -36,7 +36,7 @@ Every Steam game has a unique App ID. You can find these:
 ### Complete Steam Integration Example
 
 ```typescript
-import { GameLauncher } from 'game-launcher';
+import { GameLauncher } from '@team-falkor/game-launcher';
 import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';

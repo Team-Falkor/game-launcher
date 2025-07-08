@@ -31,7 +31,7 @@ npm install -D typescript @types/node
 ### TypeScript Version
 
 ```typescript
-import { GameLauncher } from 'game-launcher';
+import { GameLauncher } from '@team-falkor/game-launcher';
 import path from 'path';
 
 /**

@@ -448,7 +448,7 @@ type Platform = "win32" | "darwin" | "linux" | "other";
 #### Usage Example
 
 ```typescript
-import { getPlatform } from 'game-launcher';
+import { getPlatform } from '@team-falkor/game-launcher';
 
 const platform: Platform = getPlatform();
 

@@ -510,7 +510,7 @@ interface GameHistoryEntry {
 
 ```typescript
 // ✅ Good: Comprehensive input validation
-import { validateGameId, validateExecutable } from 'game-launcher';
+import { validateGameId, validateExecutable } from '@team-falkor/game-launcher';
 import path from 'path';
 
 class SecureGameLauncher {

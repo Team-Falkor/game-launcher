@@ -25,7 +25,7 @@ The Configuration Management example covers:
 ### Complete Configuration Manager
 
 ```typescript
-import { GameLauncher, GameLauncherOptions } from 'game-launcher';
+import { GameLauncher, GameLauncherOptions } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';

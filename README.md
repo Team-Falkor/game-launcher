@@ -207,33 +207,108 @@ Integrate games into larger applications, Discord bots, streaming platforms, or 
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! Here's how you can help:
+**We actively welcome and encourage contributions from the community!** Whether you're a seasoned developer or just getting started, there are many ways to help improve the Game Launcher library.
 
-### 🐛 Reporting Issues
-- Use our [issue templates](https://github.com/team-falkor/game-launcher/issues/new/choose)
-- Provide detailed reproduction steps
-- Include system information and logs
+### 🌟 Ways to Contribute
 
-### 💻 Development
+#### 🐛 **Bug Reports & Feature Requests**
+- Use our [issue templates](https://github.com/team-falkor/game-launcher/issues/new/choose) for consistent reporting
+- Provide detailed reproduction steps and system information
+- Include logs, error messages, and expected vs. actual behavior
+- Search existing issues before creating new ones
+
+#### 💻 **Code Contributions**
+- **Bug fixes** - Help resolve open issues
+- **New features** - Implement requested functionality
+- **Performance improvements** - Optimize existing code
+- **Platform support** - Enhance cross-platform compatibility
+- **Test coverage** - Add unit, integration, or end-to-end tests
+
+#### 📝 **Documentation**
+- Improve existing documentation clarity
+- Add new examples and use cases
+- Create tutorials and guides
+- Fix typos and formatting issues
+- Translate documentation to other languages
+
+#### 🎨 **Community Support**
+- Help answer questions in discussions
+- Review pull requests
+- Share your projects using the library
+- Provide feedback on proposed changes
+
+### 🚀 Getting Started
+
+#### **First-time Contributors**
+Look for issues labeled `good first issue` or `help wanted` - these are perfect starting points!
+
+#### **Development Setup**
 ```bash
-# Clone the repository
-git clone https://github.com/team-falkor/game-launcher.git
+# Fork the repository on GitHub, then clone your fork
+git clone https://github.com/YOUR-USERNAME/game-launcher.git
 cd game-launcher
 
 # Install dependencies
 npm install
 
-# Run tests
-npm test
+# Create a new branch for your feature/fix
+git checkout -b feature/your-feature-name
 
-# Build the project
+# Make your changes and test them
+npm test
 npm run build
+
+# Commit your changes with a descriptive message
+git commit -m "feat: add support for new game platform"
+
+# Push to your fork and create a pull request
+git push origin feature/your-feature-name
 ```
 
-### 📝 Documentation
-- Improve existing documentation
-- Add new examples and use cases
-- Translate documentation to other languages
+### 📋 Contribution Guidelines
+
+#### **Code Standards**
+- Follow the existing code style and conventions
+- Write clear, self-documenting code with appropriate comments
+- Ensure all tests pass and add new tests for your changes
+- Update documentation for any API changes
+
+#### **Pull Request Process**
+1. **Fork** the repository and create a feature branch
+2. **Make** your changes with clear, atomic commits
+3. **Test** your changes thoroughly across platforms
+4. **Update** documentation and examples if needed
+5. **Submit** a pull request with a clear description
+6. **Respond** to feedback and iterate as needed
+
+#### **Commit Message Format**
+We use [Conventional Commits](https://www.conventionalcommits.org/):
+```
+type(scope): description
+
+feat(launcher): add Steam game detection
+fix(process): resolve memory leak in game monitoring
+docs(examples): add cross-platform configuration guide
+```
+
+### 🎯 Priority Areas
+
+We're especially looking for help with:
+- **🖥️ Platform-specific optimizations** (Windows, macOS, Linux)
+- **🎮 Game platform integrations** (Epic Games, GOG, etc.)
+- **🧪 Test coverage improvements**
+- **📚 Documentation and examples**
+- **🌐 Internationalization support**
+- **♿ Accessibility features**
+
+### 💬 Questions?
+
+Don't hesitate to ask! We're here to help:
+- **💭 Start a [Discussion](https://github.com/team-falkor/game-launcher/discussions)** for general questions
+- **🐛 Open an [Issue](https://github.com/team-falkor/game-launcher/issues)** for bugs or feature requests
+- **📧 Reach out** to maintainers for guidance on larger contributions
+
+**Thank you for considering contributing to Game Launcher! Every contribution, no matter how small, helps make this library better for everyone.** 🙏
 
 ## 📄 License
 

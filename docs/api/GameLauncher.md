@@ -326,7 +326,7 @@ The GameLauncher class doesn't expose public properties directly. All interactio
 ### Basic Game Launch
 
 ```typescript
-import GameLauncher from 'game-launcher';
+import GameLauncher from '@team-falkor/game-launcher';
 
 const launcher = new GameLauncher();
 

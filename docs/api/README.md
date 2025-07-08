@@ -15,7 +15,7 @@ This section provides comprehensive documentation for all APIs, interfaces, and 
 The main class for managing game processes. See [GameLauncher.md](./GameLauncher.md) for detailed documentation.
 
 ```typescript
-import GameLauncher from 'game-launcher';
+import GameLauncher from '@team-falkor/game-launcher';
 
 const launcher = new GameLauncher(options);
 ```
@@ -97,7 +97,7 @@ Helper functions and utilities. See [utilities.md](./utilities.md) for detailed 
 ### Validation
 
 ```typescript
-import { validateGameId, validateExecutable } from 'game-launcher';
+import { validateGameId, validateExecutable } from '@team-falkor/game-launcher';
 
 // Validate game ID format
 validateGameId('my-game-123'); // throws if invalid
@@ -109,7 +109,7 @@ await validateExecutable('/path/to/game.exe'); // throws if invalid
 ### Platform Detection
 
 ```typescript
-import { getPlatform, getKillSignal } from 'game-launcher';
+import { getPlatform, getKillSignal } from '@team-falkor/game-launcher';
 
 const platform = getPlatform(); // 'win32' | 'darwin' | 'linux' | 'other'
 const signal = getKillSignal(false); // 'SIGTERM' or 'SIGKILL'

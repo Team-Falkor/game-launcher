@@ -25,7 +25,7 @@ The Game Library Manager example covers:
 ### Complete Game Library Manager
 
 ```typescript
-import { GameLauncher } from 'game-launcher';
+import { GameLauncher } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';

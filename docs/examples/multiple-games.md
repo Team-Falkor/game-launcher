@@ -24,7 +24,7 @@ The Multiple Games example covers:
 ### Complete Multiple Games Manager
 
 ```typescript
-import { GameLauncher, GameStatus } from 'game-launcher';
+import { GameLauncher, GameStatus } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 
 /**

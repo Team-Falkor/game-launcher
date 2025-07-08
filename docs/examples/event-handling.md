@@ -34,7 +34,7 @@ The Game Launcher emits the following events:
 ### Complete Event Handling Example
 
 ```typescript
-import { GameLauncher, GameStatus } from 'game-launcher';
+import { GameLauncher, GameStatus } from '@team-falkor/game-launcher';
 import { EventEmitter } from 'events';
 
 /**

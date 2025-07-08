@@ -44,7 +44,7 @@ const defaultOptions: GameLauncherOptions = {
 ### Basic Configuration Examples
 
 ```typescript
-import { GameLauncher } from 'game-launcher';
+import { GameLauncher } from '@team-falkor/game-launcher';
 
 // Default configuration
 const launcher = new GameLauncher();
@@ -283,7 +283,7 @@ const gameId = await launcher.launchGame({
 ### Windows Configuration
 
 ```typescript
-import { getPlatform } from 'game-launcher';
+import { getPlatform } from '@team-falkor/game-launcher';
 
 function createWindowsLauncher() {
   if (getPlatform() !== 'win32') {

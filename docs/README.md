@@ -35,7 +35,7 @@ pnpm add game-launcher
 ## 🚀 Quick Start
 
 ```typescript
-import GameLauncher from 'game-launcher';
+import GameLauncher from '@team-falkor/game-launcher';
 
 // Create launcher instance
 const launcher = new GameLauncher({

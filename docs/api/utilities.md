@@ -40,7 +40,7 @@ function validateGameId(gameId: string): void
 #### Usage Example
 
 ```typescript
-import { validateGameId } from 'game-launcher';
+import { validateGameId } from '@team-falkor/game-launcher';
 
 try {
   validateGameId('my-game-123'); // ✅ Valid
@@ -82,7 +82,7 @@ function validateExecutable(executable: string): Promise<void>
 #### Usage Example
 
 ```typescript
-import { validateExecutable } from 'game-launcher';
+import { validateExecutable } from '@team-falkor/game-launcher';
 
 try {
   // Validate executable before launching
@@ -139,7 +139,7 @@ function getPlatform(): Platform
 #### Usage Example
 
 ```typescript
-import { getPlatform } from 'game-launcher';
+import { getPlatform } from '@team-falkor/game-launcher';
 
 const platform = getPlatform();
 
@@ -191,7 +191,7 @@ function getKillSignal(force?: boolean): string
 #### Usage Example
 
 ```typescript
-import { getKillSignal } from 'game-launcher';
+import { getKillSignal } from '@team-falkor/game-launcher';
 
 // Graceful termination
 const gracefulSignal = getKillSignal(false); // 'SIGTERM'
@@ -236,7 +236,7 @@ The library includes sophisticated process monitoring capabilities:
 ### Pre-Launch Validation
 
 ```typescript
-import { validateGameId, validateExecutable, getPlatform } from 'game-launcher';
+import { validateGameId, validateExecutable, getPlatform } from '@team-falkor/game-launcher';
 
 async function safeLaunchGame(gameId: string, executable: string, args?: string[]) {
   try {
@@ -293,7 +293,7 @@ console.log('Game executable:', executable);
 ### Batch Game Validation
 
 ```typescript
-import { validateGameId, validateExecutable } from 'game-launcher';
+import { validateGameId, validateExecutable } from '@team-falkor/game-launcher';
 
 interface GameConfig {
   gameId: string;
@@ -344,7 +344,7 @@ console.log(`${validGames.length} games are ready to launch`);
 ### Dynamic Platform Configuration
 
 ```typescript
-import { getPlatform, getKillSignal } from 'game-launcher';
+import { getPlatform, getKillSignal } from '@team-falkor/game-launcher';
 
 class PlatformConfig {
   private platform = getPlatform();
