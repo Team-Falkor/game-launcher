@@ -1,0 +1,43 @@
+{
+	"name": "@team-falkor/game-launcher",
+	"version": "0.1.0",
+	"description": "Cross-platform Node.js utility package for managing game processes",
+	"license": "BSD-3-Clause",
+	"main": "dist/index.js",
+	"module": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"check": "biome check .",
+		"check:unsafe": "biome check --write --unsafe .",
+		"check:write": "biome check --write ."
+	},
+	"keywords": [
+		"game",
+		"process",
+		"launcher",
+		"cross-platform",
+		"nodejs"
+	],
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.6",
+		"@types/bun": "latest",
+		"tsdown": "^0.12.9"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	}
+}
