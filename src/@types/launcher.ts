@@ -30,7 +30,7 @@ export interface LaunchGameOptions {
 	/** Launch timeout in milliseconds */
 	timeout?: number | undefined;
 	/** Additional metadata */
-	metadata?: Record<string, any> | undefined;
+	metadata?: Record<string, string | number | boolean | null> | undefined;
 }
 
 export interface GameLauncherInterface {

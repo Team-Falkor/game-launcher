@@ -13,7 +13,7 @@ export interface GameProcessInfo {
 	endTime?: Date;
 	exitCode?: number | null;
 	signal?: string | null;
-	metadata: Record<string, any>;
+	metadata: Record<string, string | number | boolean | null>;
 }
 
 export interface ProcessManagerOptions {
@@ -40,5 +40,5 @@ export interface ProcessStartOptions {
 	environment?: Record<string, string> | undefined;
 	captureOutput?: boolean | undefined;
 	timeout?: number | undefined;
-	metadata?: Record<string, any> | undefined;
+	metadata?: Record<string, string | number | boolean | null> | undefined;
 }

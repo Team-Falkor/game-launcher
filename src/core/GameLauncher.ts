@@ -56,9 +56,10 @@ export class GameLauncher implements GameLauncherInterface {
 		}
 
 		const runningGames = this.getRunningGames();
-		if (runningGames.length >= this.options.maxConcurrentGames!) {
+		const maxGames = this.options.maxConcurrentGames ?? 10;
+		if (runningGames.length >= maxGames) {
 			throw new Error(
-				`Maximum concurrent games limit reached (${this.options.maxConcurrentGames})`,
+				`Maximum concurrent games limit reached (${maxGames})`,
 			);
 		}
 

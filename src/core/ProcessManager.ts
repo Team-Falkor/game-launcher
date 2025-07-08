@@ -113,7 +113,7 @@ export class ProcessManager implements ProcessManagerInterface {
 				// Handle immediate exit during spawn
 				childProcess.on(
 					"exit",
-					(code: number | null, signal: string | null) => {
+					(code: number | null, _signal: string | null) => {
 						clearTimeout(timeout);
 						if (code !== null && code !== 0) {
 							reject(new Error(`Process exited immediately with code ${code}`));
@@ -236,7 +236,9 @@ export class ProcessManager implements ProcessManagerInterface {
 					}
 
 					// Start enhanced monitoring for this detached process
-					this.startDetachedProcessMonitoring(gameId, process.pid!);
+					if (process.pid) {
+						this.startDetachedProcessMonitoring(gameId, process.pid);
+					}
 					return;
 				}
 
@@ -366,7 +368,7 @@ export class ProcessManager implements ProcessManagerInterface {
 							this.handleProcessExit(gameId, 0, null);
 						}
 						// If we find the process, continue monitoring
-					} catch (error) {
+					} catch {
 						// If tasklist fails, assume process is dead
 						clearInterval(checkInterval);
 						this.handleProcessExit(gameId, 0, null);
@@ -376,7 +378,7 @@ export class ProcessManager implements ProcessManagerInterface {
 					try {
 						process.kill(pid, 0);
 						// Process exists, continue monitoring
-					} catch (error) {
+					} catch {
 						// Process doesn't exist
 						clearInterval(checkInterval);
 						this.handleProcessExit(gameId, 0, null);
@@ -408,15 +410,15 @@ export class ProcessManager implements ProcessManagerInterface {
 												timeout: 1000,
 											});
 											// If we get here, process exists
-										} catch (error) {
+										} catch {
 											// Process doesn't exist or tasklist failed
 											this.handleProcessExit(gameId, null, null);
 										}
-									} catch (error) {
+									} catch {
 										// Fallback to kill(0) method
 										try {
 											process.kill(0);
-										} catch (killError) {
+										} catch {
 											this.handleProcessExit(gameId, null, null);
 										}
 									}
@@ -428,7 +430,7 @@ export class ProcessManager implements ProcessManagerInterface {
 								} else if (process.pid) {
 									try {
 										process.kill(0);
-									} catch (error) {
+									} catch {
 										this.handleProcessExit(gameId, null, null);
 									}
 								}
