@@ -1,19 +1,19 @@
 import {
-	type ChildProcess,
-	execSync,
-	type SpawnOptions,
-	spawn,
+  type ChildProcess,
+  execSync,
+  type SpawnOptions,
+  spawn,
 } from "node:child_process";
 import * as sudo from "@expo/sudo-prompt";
 import type {
-	GameProcessInfo,
-	GameStatus,
-	ProcessManagerInterface,
-	ProcessManagerOptions,
-	ProcessStartOptions,
+  GameProcessInfo,
+  GameStatus,
+  ProcessManagerInterface,
+  ProcessManagerOptions,
+  ProcessStartOptions,
 } from "../@types";
 import { getPlatform } from "../utils/platform";
-import { validateExecutable } from "../utils/validation";
+import { validateExecutable, SecurityValidator, CommandSanitizer, PathValidator } from "../utils/validation";
 import type { GameEventEmitter } from "./EventEmitter";
 
 export class ProcessManager implements ProcessManagerInterface {
@@ -54,8 +54,18 @@ export class ProcessManager implements ProcessManagerInterface {
 			throw new Error(`Game with ID "${gameId}" is already running`);
 		}
 
+		// SECURITY: Enhanced validation using security framework
 		await validateExecutable(executable);
+		const sanitizedExecutable = SecurityValidator.sanitizeExecutablePath(executable);
+		const sanitizedArgs = SecurityValidator.sanitizeArguments(args);
+		
+		// Validate paths
+		PathValidator.validateExecutablePath(sanitizedExecutable);
+		if (options.workingDirectory) {
+			PathValidator.validateWorkingDirectory(options.workingDirectory);
+		}
 
+		// SECURITY: Sanitize environment variables
 		const cleanEnvironment: Record<string, string> = {};
 		Object.entries(process.env).forEach(([key, value]) => {
 			if (value !== undefined) {
@@ -63,13 +73,11 @@ export class ProcessManager implements ProcessManagerInterface {
 			}
 		});
 
-		const filteredOptionsEnvironment: Record<string, string> = {};
+		let combinedEnvironment = cleanEnvironment;
 		if (options.environment) {
-			Object.entries(options.environment).forEach(([key, value]) => {
-				if (value !== undefined) {
-					filteredOptionsEnvironment[key] = value;
-				}
-			});
+			// Merge and sanitize user-provided environment variables
+			const userEnvironment = SecurityValidator.validateEnvironment(options.environment);
+			combinedEnvironment = { ...cleanEnvironment, ...userEnvironment };
 		}
 
 		const processInfo: GameProcessInfo = {
@@ -78,7 +86,7 @@ export class ProcessManager implements ProcessManagerInterface {
 			executable,
 			args,
 			workingDirectory: options.workingDirectory || process.cwd(),
-			environment: { ...cleanEnvironment, ...filteredOptionsEnvironment },
+			environment: combinedEnvironment,
 			status: "launching",
 			startTime: new Date(),
 			metadata: { 
@@ -91,10 +99,10 @@ export class ProcessManager implements ProcessManagerInterface {
 			let childProcess: ChildProcess;
 
 			if (options.runAsAdmin) {
-				// Use sudo-prompt for admin execution
+				// Use sudo-prompt for admin execution with sanitized inputs
 				childProcess = await this.spawnWithAdmin(
-					executable,
-					args,
+					sanitizedExecutable,
+					sanitizedArgs,
 					processInfo.workingDirectory,
 					processInfo.environment,
 					options.captureOutput,
@@ -109,7 +117,8 @@ export class ProcessManager implements ProcessManagerInterface {
 					shell: getPlatform() === "win32",
 				};
 
-				childProcess = spawn(executable, args, spawnOptions);
+				// Use sanitized inputs for regular spawn
+				childProcess = spawn(sanitizedExecutable, sanitizedArgs, spawnOptions);
 			}
 
 			// FIX: Better error handling for spawn failure
@@ -248,50 +257,76 @@ export class ProcessManager implements ProcessManagerInterface {
 		captureOutput?: boolean,
 	): Promise<ChildProcess> {
 		return new Promise((resolve, reject) => {
-			// Build the command string with improved quoting
-			const quotedExecutable = this.quoteArg(executable);
-			const quotedArgs = args.map((arg) => this.quoteArg(arg));
-			const command = [quotedExecutable, ...quotedArgs].join(" ");
+			let fullCommand: string;
+			try {
+				// SECURITY: Validate and sanitize all inputs
+				const sanitizedExecutable = SecurityValidator.sanitizeExecutablePath(executable);
+				const sanitizedArgs = SecurityValidator.sanitizeArguments(args);
+				const sanitizedEnvironment = SecurityValidator.validateEnvironment(environment);
+				
+				// Validate paths
+				PathValidator.validateExecutablePath(sanitizedExecutable);
+				PathValidator.validateWorkingDirectory(workingDirectory);
+				
+				// Use secure command construction
+				const escapedExecutable = CommandSanitizer.escapeShellArg(sanitizedExecutable);
+				const escapedArgs = sanitizedArgs.map(arg => CommandSanitizer.escapeShellArg(arg));
+				const command = [escapedExecutable, ...escapedArgs].join(" ");
+				
+				// Validate the final command
+				CommandSanitizer.validateCommand(command);
 
-			// Build environment variables command prefix
-			let envCommand = "";
-			const platform = getPlatform();
-			if (platform === "win32") {
-				// Windows: set environment variables before command
-				const envVars = Object.entries(environment)
-					.filter(
-						([key, value]) => key !== "PATH" && value !== process.env[key],
-					)
-					.map(([key, value]) => `set "${key}=${value}" &&`)
-					.join(" ");
-				envCommand = envVars ? `${envVars} ` : "";
-			} else {
-				// Unix-like: export environment variables
-				const envVars = Object.entries(environment)
-					.filter(
-						([key, value]) => key !== "PATH" && value !== process.env[key],
-					)
-					.map(([key, value]) => `export ${key}="${value}"`)
-					.join("; ");
-				envCommand = envVars ? `${envVars}; ` : "";
+				// Build environment variables command prefix with sanitized values
+				let envCommand = "";
+				const platform = getPlatform();
+				if (platform === "win32") {
+					// Windows: set environment variables before command
+					const envVars = Object.entries(sanitizedEnvironment)
+						.filter(
+							([key, value]) => key !== "PATH" && value !== process.env[key],
+						)
+						.map(([key, value]) => {
+							// Escape environment variable values
+							const escapedValue = value.replace(/"/g, '\\"');
+							return `set "${key}=${escapedValue}" &&`;
+						})
+						.join(" ");
+					envCommand = envVars ? `${envVars} ` : "";
+				} else {
+					// Unix-like: export environment variables
+					const envVars = Object.entries(sanitizedEnvironment)
+						.filter(
+							([key, value]) => key !== "PATH" && value !== process.env[key],
+						)
+						.map(([key, value]) => {
+							// Escape environment variable values
+							const escapedValue = value.replace(/'/g, "'\\''")
+							return `export ${key}='${escapedValue}'`;
+						})
+						.join("; ");
+					envCommand = envVars ? `${envVars}; ` : "";
+				}
+
+				// Change directory command with sanitized path
+				const sanitizedWorkingDir = SecurityValidator.sanitizeExecutablePath(workingDirectory);
+				const cdCommand =
+					platform === "win32"
+						? `cd /d "${sanitizedWorkingDir.replace(/"/g, '\\"')}" && `
+						: `cd '${sanitizedWorkingDir.replace(/'/g, "'\\''")}' && `;
+
+				fullCommand = `${cdCommand}${envCommand}${command}`;
+				
+				// Final validation of the complete command
+				CommandSanitizer.validateCommand(fullCommand);
+			} catch (securityError: any) {
+				const securityMessage = securityError instanceof Error ? securityError.message : "Unknown security error";
+				reject(new Error(`Security validation failed: ${securityMessage}`));
+				return;
 			}
 
-			// Change directory command
-			const cdCommand =
-				platform === "win32"
-					? `cd /d "${workingDirectory}" && `
-					: `cd "${workingDirectory}" && `;
-
-			const fullCommand = `${cdCommand}${envCommand}${command}`;
-
-			// Sanitize environment variables for sudo-prompt
-			// Remove variables with invalid characters (like parentheses) that cause sudo-prompt to fail
-			const sanitizedEnv = Object.fromEntries(
-				Object.entries(environment).filter(([key]) => {
-					// Filter out environment variable names with invalid characters
-					return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key);
-				})
-			);
+			// SECURITY: Use SecurityValidator for sudo-prompt environment sanitization
+			// This ensures consistent security validation across all execution paths
+			const sanitizedEnv = SecurityValidator.validateEnvironment(environment);
 
 			const sudoOptions = {
 				name: "Game Launcher",
@@ -797,23 +832,9 @@ export class ProcessManager implements ProcessManagerInterface {
 		}
 	}
 
-	private quoteArg(arg: string): string {
-		if (!arg) return '""'; // Handle empty strings
-		
-		if (getPlatform() === "win32") {
-			// Windows-style quoting - only quote if necessary
-			if (/[\s"<>|&^]/.test(arg)) {
-				return `"${arg.replace(/"/g, '\\"')}"`;
-			}
-			return arg;
-		} else {
-			// Unix-style quoting - only quote if necessary
-			if (/[\s'"\\$`!*?\[\]{}();|&<>]/.test(arg)) {
-				return `'${arg.replace(/'/g, "'\\''")}' `;
-			}
-			return arg;
-		}
-	}
+	// REMOVED: quoteArg method replaced with secure CommandSanitizer.escapeShellArg
+	// This method was vulnerable to command injection and has been replaced
+	// with proper security validation in the SecurityValidator framework
 
 	private startMonitoring(): void {
 		if (this.monitoringInterval) return;
