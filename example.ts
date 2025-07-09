@@ -1,6 +1,88 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import GameLauncher from "./src/index";
+import { GameLauncher } from "./src/index";
+
+// Example demonstrating the new runAsAdmin feature
+async function demonstrateAdminLaunch() {
+	const launcher = new GameLauncher({
+		maxConcurrentGames: 5,
+		enableProcessMonitoring: true,
+	});
+
+	// Set up event listeners
+	launcher.on("launched", (event) => {
+		console.log(`Game launched: ${event.gameId} (PID: ${event.pid})`);
+	});
+
+	launcher.on("error", (event) => {
+		console.error(`Error in ${event.phase}: ${event.error.message}`);
+	});
+
+	try {
+		// Example 1: Regular game launch
+		console.log("Launching regular game...");
+		const regularGameId = await launcher.launchGame({
+			gameId: "notepad-regular",
+			executable: "C:\\Windows\\System32\\notepad.exe",
+			args: [],
+			metadata: {
+				name: "Notepad (Regular)",
+				privileges: "user",
+			},
+		});
+
+		// Example 2: Admin game launch
+		console.log("Launching game with admin privileges...");
+		const adminGameId = await launcher.launchGame({
+			gameId: "notepad-admin",
+			executable: "C:\\Windows\\System32\\notepad.exe",
+			args: [],
+			runAsAdmin: true, // This will prompt for admin privileges
+			metadata: {
+				name: "Notepad (Admin)",
+				privileges: "administrator",
+				requiresElevation: true,
+			},
+		});
+
+		console.log("Both games launched successfully!");
+		console.log(`Regular game ID: ${regularGameId}`);
+		console.log(`Admin game ID: ${adminGameId}`);
+
+		// Check running games
+		const runningGames = launcher.getRunningGames();
+		console.log(`Currently running games: ${runningGames.length}`);
+
+		// Get detailed info for each game
+		runningGames.forEach((gameId) => {
+			const info = launcher.getGameInfo(gameId);
+			if (info) {
+				console.log(`Game ${gameId}:`, {
+					pid: info.pid,
+					status: info.status,
+					metadata: info.metadata,
+				});
+			}
+		});
+
+		// Wait a bit then close games
+		setTimeout(async () => {
+			console.log("Closing games...");
+			await launcher.closeGame(regularGameId);
+			await launcher.closeGame(adminGameId);
+			launcher.destroy();
+		}, 5000);
+	} catch (error) {
+		console.error("Failed to launch game:", error);
+		launcher.destroy();
+	}
+}
+
+// Run the demonstration
+if (import.meta.main) {
+	demonstrateAdminLaunch().catch(console.error);
+}
+
 import { getPlatform } from "./src/utils/platform";
 
 // Helper function to find executable path
@@ -120,7 +202,10 @@ async function runExample() {
 	console.log(`Working Directory: ${process.cwd()}`);
 
 	// Playtime tracking
-	const playtimeTracker = new Map<string, { startTime: Date; endTime?: Date; duration?: number }>();
+	const playtimeTracker = new Map<
+		string,
+		{ startTime: Date; endTime?: Date; duration?: number }
+	>();
 
 	// Create launcher instance
 	const launcher = new GameLauncher({
@@ -142,7 +227,7 @@ async function runExample() {
 		console.log(`   Command: ${data.command}`);
 		console.log(`   Args: ${data.args.join(" ")}`);
 		console.log(`   Start time: ${data.startTime.toISOString()}`);
-		
+
 		// Track playtime start
 		playtimeTracker.set(data.gameId, {
 			startTime: data.startTime,
@@ -155,25 +240,25 @@ async function runExample() {
 		console.log(`   Exit code: ${data.exitCode}`);
 		console.log(`   Signal: ${data.signal}`);
 		console.log(`   Duration: ${data.duration}ms`);
-		
+
 		// Update playtime tracking
 		const playtime = playtimeTracker.get(data.gameId);
 		if (playtime) {
 			playtime.endTime = data.endTime;
 			playtime.duration = data.duration;
-			
+
 			// Format playtime for display
 			const seconds = Math.floor(data.duration / 1000);
 			const minutes = Math.floor(seconds / 60);
 			const remainingSeconds = seconds % 60;
-			
+
 			let playtimeDisplay = "";
 			if (minutes > 0) {
 				playtimeDisplay = `${minutes}m ${remainingSeconds}s`;
 			} else {
 				playtimeDisplay = `${remainingSeconds}s`;
 			}
-			
+
 			console.log(`⏱️  Total playtime: ${playtimeDisplay} (${data.duration}ms)`);
 			playtimeTracker.delete(data.gameId); // Clean up
 		}
@@ -240,7 +325,7 @@ async function runExample() {
 		// Display playtime summary
 		console.log("\n📊 Playtime Summary");
 		console.log("==================");
-		
+
 		if (playtimeTracker.size === 0) {
 			console.log("✅ All games completed successfully!");
 		} else {
@@ -250,18 +335,18 @@ async function runExample() {
 				const seconds = Math.floor(currentDuration / 1000);
 				const minutes = Math.floor(seconds / 60);
 				const remainingSeconds = seconds % 60;
-				
+
 				let currentPlaytime = "";
 				if (minutes > 0) {
 					currentPlaytime = `${minutes}m ${remainingSeconds}s`;
 				} else {
 					currentPlaytime = `${remainingSeconds}s`;
 				}
-				
+
 				console.log(`   ${gameId}: ${currentPlaytime} (still running)`);
 			});
 		}
-		
+
 		// Cleanup
 		console.log("\n🧹 Cleaning up...");
 		launcher.destroy();

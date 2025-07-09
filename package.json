@@ -51,5 +51,8 @@
 	},
 	"peerDependencies": {
 		"typescript": "^5"
+	},
+	"dependencies": {
+		"@expo/sudo-prompt": "^9.3.2"
 	}
 }

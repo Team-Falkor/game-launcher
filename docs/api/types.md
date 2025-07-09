@@ -79,6 +79,9 @@ interface LaunchGameOptions {
   /** Launch timeout in milliseconds */
   timeout?: number | undefined;
   
+  /** Run the game with administrator privileges */
+  runAsAdmin?: boolean | undefined;
+  
   /** Additional metadata */
   metadata?: Record<string, any> | undefined;
 }
@@ -98,6 +101,7 @@ const launchOptions: LaunchGameOptions = {
   },
   captureOutput: true,
   timeout: 30000,
+  runAsAdmin: true, // Launch with administrator privileges
   metadata: {
     name: 'My Awesome Game',
     version: '2.1.0',

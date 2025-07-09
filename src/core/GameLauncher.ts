@@ -58,9 +58,7 @@ export class GameLauncher implements GameLauncherInterface {
 		const runningGames = this.getRunningGames();
 		const maxGames = this.options.maxConcurrentGames ?? 10;
 		if (runningGames.length >= maxGames) {
-			throw new Error(
-				`Maximum concurrent games limit reached (${maxGames})`,
-			);
+			throw new Error(`Maximum concurrent games limit reached (${maxGames})`);
 		}
 
 		// Filter out undefined values for process options
@@ -78,6 +76,9 @@ export class GameLauncher implements GameLauncherInterface {
 				captureOutput: options.captureOutput,
 			}),
 			...(options.timeout !== undefined && { timeout: options.timeout }),
+			...(options.runAsAdmin !== undefined && {
+				runAsAdmin: options.runAsAdmin,
+			}),
 			...(options.metadata !== undefined && { metadata: options.metadata }),
 		};
 
@@ -100,11 +101,16 @@ export class GameLauncher implements GameLauncherInterface {
 
 	getRunningGames(): string[] {
 		const allProcesses = this.processManager.getAllProcesses();
-		return Array.from(allProcesses.entries())
-			.filter(
-				([_, info]) => info.status === "running" || info.status === "detached",
-			)
-			.map(([gameId]) => gameId);
+		const runningGames: string[] = [];
+		
+		// More efficient iteration without intermediate arrays
+		for (const [gameId, info] of allProcesses) {
+			if (info.status === "running" || info.status === "detached") {
+				runningGames.push(gameId);
+			}
+		}
+		
+		return runningGames;
 	}
 
 	getGameInfo(gameId: string): GameProcessInfo | null {

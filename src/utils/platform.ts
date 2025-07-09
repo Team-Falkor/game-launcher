@@ -1,21 +1,22 @@
 export type Platform = "win32" | "darwin" | "linux" | "other";
 
+// Cache platform detection for better performance
+let cachedPlatform: Platform | null = null;
+
 export function getPlatform(): Platform {
-	const platform = process.platform;
+	if (cachedPlatform === null) {
+		const platform = process.platform;
 
-	if (platform === "win32") return "win32";
-	if (platform === "darwin") return "darwin";
-	if (platform === "linux") return "linux";
+		if (platform === "win32") cachedPlatform = "win32";
+		else if (platform === "darwin") cachedPlatform = "darwin";
+		else if (platform === "linux") cachedPlatform = "linux";
+		else cachedPlatform = "other";
+	}
 
-	return "other";
+	return cachedPlatform;
 }
 
 export function getKillSignal(force: boolean = false): string {
-	const platform = getPlatform();
-
-	if (platform === "win32") {
-		return force ? "SIGKILL" : "SIGTERM";
-	}
-
+	// Simplified since all platforms use the same signals
 	return force ? "SIGKILL" : "SIGTERM";
 }

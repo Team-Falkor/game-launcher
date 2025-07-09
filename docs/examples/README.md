@@ -8,6 +8,7 @@ This directory contains practical examples demonstrating how to use the Game Lau
 - [**Simple Game Launcher**](simple-launcher.md) - Basic game launching and monitoring
 - [**Event Handling**](event-handling.md) - Working with game events
 - [**Multiple Games**](multiple-games.md) - Managing multiple games simultaneously
+- [**Admin Privileges**](admin-privileges.md) - Launching games with administrator privileges
 
 ### Advanced Examples
 - [**Steam Integration**](steam-integration.md) - Launching Steam games

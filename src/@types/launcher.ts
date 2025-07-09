@@ -29,6 +29,8 @@ export interface LaunchGameOptions {
 	captureOutput?: boolean | undefined;
 	/** Launch timeout in milliseconds */
 	timeout?: number | undefined;
+	/** Run the game with administrator privileges */
+	runAsAdmin?: boolean | undefined;
 	/** Additional metadata */
 	metadata?: Record<string, string | number | boolean | null> | undefined;
 }

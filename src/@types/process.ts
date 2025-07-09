@@ -40,5 +40,6 @@ export interface ProcessStartOptions {
 	environment?: Record<string, string> | undefined;
 	captureOutput?: boolean | undefined;
 	timeout?: number | undefined;
+	runAsAdmin?: boolean | undefined;
 	metadata?: Record<string, string | number | boolean | null> | undefined;
 }
