@@ -178,20 +178,6 @@ Integrate games into larger applications, Discord bots, streaming platforms, or 
 - **macOS**: Info.plist parsing, Gatekeeper compatibility, Accessibility permissions
 - **Linux**: Desktop file parsing, Wayland/X11 detection, Flatpak/Snap support
 
-## 📋 Requirements
-
-### System Requirements
-- **Node.js**: 16.0.0 or higher
-- **TypeScript**: 4.5+ (for TypeScript projects)
-- **Memory**: 512MB RAM minimum
-- **Storage**: 50MB for library and dependencies
-
-### Platform Requirements
-- **Windows**: Windows 10 or higher
-- **macOS**: macOS 10.15 (Catalina) or higher
-- **Linux**: Any modern distribution with glibc 2.17+
-
-
 ## 🤝 Contributing
 
 **We actively welcome and encourage contributions from the community!** Whether you're a seasoned developer or just getting started, there are many ways to help improve the Game Launcher library.
