@@ -1,22 +1,56 @@
 import { access, constants } from "node:fs/promises";
-import { resolve, normalize, isAbsolute, sep } from "node:path";
 import { platform } from "node:os";
+import { isAbsolute, normalize, resolve, sep } from "node:path";
+import { getSecurityAuditLogger, SecurityEvent } from "../logging";
+
+/**
+ * Helper function to remove control characters without using regex ranges
+ */
+function removeControlCharacters(input: string): string {
+	return input
+		.split("")
+		.filter((char) => {
+			const code = char.charCodeAt(0);
+			// Remove null bytes (0x00) and control characters (0x01-0x1F, 0x7F-0x9F)
+			return !(code <= 0x1f || (code >= 0x7f && code <= 0x9f));
+		})
+		.join("");
+}
 
 export async function validateExecutable(executable: string): Promise<void> {
+	const auditLogger = getSecurityAuditLogger();
+
 	if (!executable || typeof executable !== "string") {
+		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, false, {
+			executable,
+			error: "Executable path must be a non-empty string",
+		});
 		throw new Error("Executable path must be a non-empty string");
 	}
-	
+
 	if (executable.trim().length === 0) {
+		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, false, {
+			executable,
+			error: "Executable path cannot be empty or whitespace only",
+		});
 		throw new Error("Executable path cannot be empty or whitespace only");
 	}
-	
+
 	try {
 		const resolvedPath = resolve(executable);
 		await access(resolvedPath, constants.F_OK | constants.X_OK);
+		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, true, {
+			executable: resolvedPath,
+		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		throw new Error(`Executable not found or not executable: ${executable} (${errorMessage})`);
+		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, false, {
+			executable,
+			error: errorMessage,
+		});
+		throw new Error(
+			`Executable not found or not executable: ${executable} (${errorMessage})`,
+		);
 	}
 }
 
@@ -26,137 +60,301 @@ const GAME_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 /**
  * Security validation and sanitization utilities
  */
-export class SecurityValidator {
+export namespace SecurityValidator {
 	/**
 	 * Sanitizes and validates executable paths to prevent path traversal attacks
 	 */
-	static sanitizeExecutablePath(path: string): string {
+	export function sanitizeExecutablePath(path: string): string {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!path || typeof path !== "string") {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
+				originalPath: path,
+				error: "Executable path must be a non-empty string",
+			});
 			throw new Error("Executable path must be a non-empty string");
 		}
 
 		// Remove null bytes and other dangerous characters
-		const sanitized = path.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
-		
+		const sanitized = removeControlCharacters(path);
+
 		// Normalize path to prevent traversal
 		const normalized = normalize(sanitized);
-		
+
 		// Check for path traversal attempts
 		if (normalized.includes("..") || normalized.includes("~")) {
+			auditLogger.logSecurityEvent(
+				SecurityEvent.PATH_TRAVERSAL_ATTEMPT,
+				false,
+				{
+					originalPath: path,
+					normalizedPath: normalized,
+					error: "Path traversal detected in executable path",
+				},
+			);
 			throw new Error("Path traversal detected in executable path");
 		}
-		
+
 		// Validate path length
 		if (normalized.length > 4096) {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
+				originalPath: path,
+				normalizedPath: normalized,
+				error: "Executable path too long",
+			});
 			throw new Error("Executable path too long");
 		}
-		
+
 		// Platform-specific validation
 		if (platform() === "win32") {
 			// Windows: Check for reserved names and invalid characters
-			const reservedNames = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
+			const reservedNames = [
+				"CON",
+				"PRN",
+				"AUX",
+				"NUL",
+				"COM1",
+				"COM2",
+				"COM3",
+				"COM4",
+				"COM5",
+				"COM6",
+				"COM7",
+				"COM8",
+				"COM9",
+				"LPT1",
+				"LPT2",
+				"LPT3",
+				"LPT4",
+				"LPT5",
+				"LPT6",
+				"LPT7",
+				"LPT8",
+				"LPT9",
+			];
 			const fileName = normalized.split(sep).pop()?.toUpperCase();
 			if (fileName) {
 				const baseName = fileName.split(".")[0];
 				if (baseName && reservedNames.includes(baseName)) {
+					auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
+						originalPath: path,
+						normalizedPath: normalized,
+						reservedName: baseName,
+						error: "Reserved filename detected",
+					});
 					throw new Error("Reserved filename detected");
 				}
 			}
-			
-			// Check for invalid Windows characters
-			if (/[<>:"|?*]/.test(normalized)) {
+
+			// Check for invalid Windows characters (excluding colon which is valid in drive letters)
+			if (/[<>"|?*]/.test(normalized)) {
+				auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
+					originalPath: path,
+					normalizedPath: normalized,
+					error: "Invalid characters in Windows path",
+				});
 				throw new Error("Invalid characters in Windows path");
 			}
 		}
-		
+
+		auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, true, {
+			originalPath: path,
+			sanitizedPath: normalized,
+		});
+
 		return normalized;
 	}
 
 	/**
 	 * Sanitizes command line arguments to prevent injection attacks
 	 */
-	static sanitizeArguments(args: string[]): string[] {
+	export function sanitizeArguments(args: string[]): string[] {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!Array.isArray(args)) {
+			auditLogger.logSecurityEvent(SecurityEvent.ARGUMENT_SANITIZATION, false, {
+				arguments: args,
+				error: "Arguments must be an array",
+			});
 			throw new Error("Arguments must be an array");
 		}
-		
-		return args.map(arg => {
+
+		const sanitizedArgs = args.map((arg) => {
 			if (typeof arg !== "string") {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ARGUMENT_SANITIZATION,
+					false,
+					{
+						arguments: args,
+						invalidArgument: arg,
+						error: "All arguments must be strings",
+					},
+				);
 				throw new Error("All arguments must be strings");
 			}
-			
+
 			// Remove null bytes and control characters
-			const sanitized = arg.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
-			
+			const sanitized = removeControlCharacters(arg);
+
 			// Check for command injection patterns
 			const dangerousPatterns = [
-				/[;&|`$(){}\[\]]/,  // Shell metacharacters
+				/[;&|`$(){}[\]]/, // Shell metacharacters
 				/\\x[0-9a-fA-F]{2}/, // Hex escape sequences
-				/\\[0-7]{1,3}/,     // Octal escape sequences
+				/\\[0-7]{1,3}/, // Octal escape sequences
 			];
-			
+
 			for (const pattern of dangerousPatterns) {
 				if (pattern.test(sanitized)) {
+					auditLogger.logSecurityEvent(SecurityEvent.INJECTION_ATTEMPT, false, {
+						originalArgument: arg,
+						sanitizedArgument: sanitized,
+						patternMatched: pattern.toString(),
+						error: `Dangerous pattern detected in argument: ${arg}`,
+					});
 					throw new Error(`Dangerous pattern detected in argument: ${arg}`);
 				}
 			}
-			
+
 			// Validate argument length
 			if (sanitized.length > 8192) {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ARGUMENT_SANITIZATION,
+					false,
+					{
+						originalArgument: arg,
+						sanitizedArgument: sanitized,
+						error: "Argument too long",
+					},
+				);
 				throw new Error("Argument too long");
 			}
-			
+
 			return sanitized;
 		});
+
+		auditLogger.logSecurityEvent(SecurityEvent.ARGUMENT_SANITIZATION, true, {
+			originalArguments: args,
+			sanitizedArguments: sanitizedArgs,
+		});
+
+		return sanitizedArgs;
 	}
 
 	/**
 	 * Validates and sanitizes environment variables
 	 */
-	static validateEnvironment(env: Record<string, string>): Record<string, string> {
+	export function validateEnvironment(
+		env: Record<string, string>,
+	): Record<string, string> {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!env || typeof env !== "object") {
+			auditLogger.logSecurityEvent(
+				SecurityEvent.ENVIRONMENT_VALIDATION,
+				false,
+				{
+					environment: env,
+					error: "Environment must be an object",
+				},
+			);
 			throw new Error("Environment must be an object");
 		}
-		
+
 		const sanitized: Record<string, string> = {};
-		
+		const blockedVars: string[] = [];
+
 		// Dangerous environment variables that should be filtered
 		const dangerousVars = new Set([
-			"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-			"DYLD_LIBRARY_PATH", "PYTHONPATH", "NODE_PATH",
-			"PERL5LIB", "RUBYLIB", "CLASSPATH"
+			"LD_PRELOAD",
+			"LD_LIBRARY_PATH",
+			"DYLD_INSERT_LIBRARIES",
+			"DYLD_LIBRARY_PATH",
+			"PYTHONPATH",
+			"NODE_PATH",
+			"PERL5LIB",
+			"RUBYLIB",
+			"CLASSPATH",
 		]);
-		
+
 		for (const [key, value] of Object.entries(env)) {
 			// Validate key
 			if (typeof key !== "string" || typeof value !== "string") {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ENVIRONMENT_VALIDATION,
+					false,
+					{
+						environmentKey: key,
+						environmentValue: value,
+						error: "Environment variable keys and values must be strings",
+					},
+				);
 				throw new Error("Environment variable keys and values must be strings");
 			}
-			
+
 			// Check for dangerous variables
 			if (dangerousVars.has(key.toUpperCase())) {
+				blockedVars.push(key);
+				auditLogger.logSecurityEvent(
+					SecurityEvent.DANGEROUS_ENVIRONMENT_BLOCKED,
+					true,
+					{
+						blockedVariable: key,
+						reason: "Dangerous environment variable blocked",
+					},
+				);
 				continue; // Skip dangerous variables
 			}
-			
-			// Validate key format
-			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+
+			// Validate key format (allow parentheses for Windows system variables like CommonProgramFiles(x86))
+			if (!/^[A-Za-z_][A-Za-z0-9_()]*$/.test(key)) {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ENVIRONMENT_VALIDATION,
+					false,
+					{
+						environmentKey: key,
+						error: `Invalid environment variable name: ${key}`,
+					},
+				);
 				throw new Error(`Invalid environment variable name: ${key}`);
 			}
-			
+
 			// Remove null bytes and control characters from value
-			const sanitizedValue = value.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
-			
+			const sanitizedValue = removeControlCharacters(value);
+
 			// Validate lengths
 			if (key.length > 255) {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ENVIRONMENT_VALIDATION,
+					false,
+					{
+						environmentKey: key,
+						error: "Environment variable name too long",
+					},
+				);
 				throw new Error("Environment variable name too long");
 			}
 			if (sanitizedValue.length > 32768) {
+				auditLogger.logSecurityEvent(
+					SecurityEvent.ENVIRONMENT_VALIDATION,
+					false,
+					{
+						environmentKey: key,
+						environmentValue: sanitizedValue,
+						error: "Environment variable value too long",
+					},
+				);
 				throw new Error("Environment variable value too long");
 			}
-			
+
 			sanitized[key] = sanitizedValue;
 		}
-		
+
+		auditLogger.logSecurityEvent(SecurityEvent.ENVIRONMENT_VALIDATION, true, {
+			originalVariableCount: Object.keys(env).length,
+			sanitizedVariableCount: Object.keys(sanitized).length,
+			blockedVariables: blockedVars,
+		});
+
 		return sanitized;
 	}
 }
@@ -164,103 +362,181 @@ export class SecurityValidator {
 /**
  * Command sanitization utilities
  */
-export class CommandSanitizer {
+export namespace CommandSanitizer {
 	/**
 	 * Escapes shell arguments for safe execution
 	 */
-	static escapeShellArg(arg: string): string {
+	export function escapeShellArg(arg: string): string {
 		if (typeof arg !== "string") {
 			throw new Error("Argument must be a string");
 		}
-		
+
 		if (platform() === "win32") {
 			// Windows: Escape double quotes and backslashes
 			return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 		} else {
 			// Unix: Use single quotes and escape single quotes
-			return `'${arg.replace(/'/g, "'\\''")}';`
+			return `'${arg.replace(/'/g, "'\\''")}';`;
 		}
 	}
 
 	/**
 	 * Validates command for execution safety
 	 */
-	static validateCommand(command: string): void {
+	export function validateCommand(command: string): void {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!command || typeof command !== "string") {
+			auditLogger.logSecurityEvent(SecurityEvent.COMMAND_VALIDATION, false, {
+				command,
+				error: "Command must be a non-empty string",
+			});
 			throw new Error("Command must be a non-empty string");
 		}
-		
-		// Check for shell injection patterns
+
+		// Check for shell injection patterns (allow legitimate Windows command operators)
 		const dangerousPatterns = [
-			/[;&|`$(){}]/,        // Shell metacharacters
-			/\s(sudo|su)\s/,     // Privilege escalation
-			/\s(rm|del)\s/,      // File deletion
-			/\s(wget|curl)\s/,   // Network access
-			/\s(nc|netcat)\s/,   // Network tools
+			/[;`${}]/, // Dangerous shell metacharacters (excluding & and | for Windows)
+			/\|\|/, // OR operator (potentially dangerous)
+			/\s(sudo|su)\s/, // Privilege escalation
+			/\s(rm|del)\s/, // File deletion
+			/\s(wget|curl)\s/, // Network access
+			/\s(nc|netcat)\s/, // Network tools
+			/\(.*\)/, // Parentheses (command substitution)
 		];
-		
+
 		for (const pattern of dangerousPatterns) {
 			if (pattern.test(command)) {
+				if (pattern.toString().includes("sudo|su")) {
+					auditLogger.logSecurityEvent(
+						SecurityEvent.PRIVILEGE_ESCALATION,
+						false,
+						{
+							command,
+							patternMatched: pattern.toString(),
+							error: `Privilege escalation attempt detected: ${command}`,
+						},
+					);
+				} else {
+					auditLogger.logSecurityEvent(SecurityEvent.INJECTION_ATTEMPT, false, {
+						command,
+						patternMatched: pattern.toString(),
+						error: `Dangerous command pattern detected: ${command}`,
+					});
+				}
 				throw new Error(`Dangerous command pattern detected: ${command}`);
 			}
 		}
+
+		auditLogger.logSecurityEvent(SecurityEvent.COMMAND_VALIDATION, true, {
+			command,
+		});
 	}
 }
 
 /**
  * Path validation utilities
  */
-export class PathValidator {
+export namespace PathValidator {
 	/**
 	 * Validates executable path for security
 	 */
-	static validateExecutablePath(path: string): void {
+	export function validateExecutablePath(path: string): void {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!path || typeof path !== "string") {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+				path,
+				error: "Path must be a non-empty string",
+			});
 			throw new Error("Path must be a non-empty string");
 		}
-		
+
 		// Use SecurityValidator for sanitization and validation
 		SecurityValidator.sanitizeExecutablePath(path);
-		
+
 		// Additional executable-specific checks
 		if (!isAbsolute(path)) {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+				path,
+				error: "Executable path must be absolute",
+			});
 			throw new Error("Executable path must be absolute");
 		}
-		
+
 		// Check for executable extensions on Windows
 		if (platform() === "win32") {
 			const validExtensions = [".exe", ".bat", ".cmd", ".com"];
-			const hasValidExtension = validExtensions.some(ext => 
-				path.toLowerCase().endsWith(ext)
+			const hasValidExtension = validExtensions.some((ext) =>
+				path.toLowerCase().endsWith(ext),
 			);
 			if (!hasValidExtension) {
-				throw new Error("Windows executable must have valid extension (.exe, .bat, .cmd, .com)");
+				auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+					path,
+					error:
+						"Windows executable must have valid extension (.exe, .bat, .cmd, .com)",
+				});
+				throw new Error(
+					"Windows executable must have valid extension (.exe, .bat, .cmd, .com)",
+				);
 			}
 		}
+
+		auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, true, {
+			path,
+			type: "executable",
+		});
 	}
 
 	/**
 	 * Validates working directory path
 	 */
-	static validateWorkingDirectory(dir: string): void {
+	export function validateWorkingDirectory(dir: string): void {
+		const auditLogger = getSecurityAuditLogger();
+
 		if (!dir || typeof dir !== "string") {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+				path: dir,
+				error: "Working directory must be a non-empty string",
+			});
 			throw new Error("Working directory must be a non-empty string");
 		}
-		
+
 		// Normalize and check for traversal
 		const normalized = normalize(dir);
-		
+
 		if (normalized.includes("..")) {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_TRAVERSAL, false, {
+				path: dir,
+				normalizedPath: normalized,
+				error: "Path traversal detected in working directory",
+			});
 			throw new Error("Path traversal detected in working directory");
 		}
-		
+
 		if (!isAbsolute(normalized)) {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+				path: dir,
+				normalizedPath: normalized,
+				error: "Working directory must be absolute",
+			});
 			throw new Error("Working directory must be absolute");
 		}
-		
+
 		if (normalized.length > 4096) {
+			auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, false, {
+				path: dir,
+				normalizedPath: normalized,
+				error: "Working directory path too long",
+			});
 			throw new Error("Working directory path too long");
 		}
+
+		auditLogger.logSecurityEvent(SecurityEvent.PATH_VALIDATION, true, {
+			path: dir,
+			normalizedPath: normalized,
+			type: "workingDirectory",
+		});
 	}
 }
 
@@ -273,7 +549,7 @@ export function validateGameId(gameId: string): void {
 	if (gameId.length === 0) {
 		throw new Error("Game ID cannot be empty");
 	}
-	
+
 	if (gameId.length > 255) {
 		throw new Error("Game ID must be less than 255 characters");
 	}

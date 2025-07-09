@@ -3,12 +3,12 @@ export { GameEventEmitter } from "./core/EventEmitter";
 // Default export for convenience
 export { GameLauncher } from "./core/GameLauncher";
 export { ProcessManager } from "./core/ProcessManager";
+export { getKillSignal, getPlatform } from "./utils/platform";
 // Security and validation utilities
-export { 
-	validateExecutable, 
-	validateGameId, 
-	SecurityValidator, 
-	CommandSanitizer, 
-	PathValidator 
+export {
+	CommandSanitizer,
+	PathValidator,
+	SecurityValidator,
+	validateExecutable,
+	validateGameId,
 } from "./utils/validation";
-export { getPlatform, getKillSignal } from "./utils/platform";

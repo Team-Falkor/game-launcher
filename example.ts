@@ -7,7 +7,10 @@ async function demonstrateAdminLaunch() {
 	const launcher = new GameLauncher({
 		maxConcurrentGames: 5,
 		enableProcessMonitoring: true,
-	});
+    logging: {
+      enabled: false,
+    }
+  });
 
 	// Set up event listeners
 	launcher.on("launched", (event) => {
@@ -216,6 +219,9 @@ async function runExample() {
 		defaultEnvironment: {
 			GAME_MODE: "test",
 			DEBUG: "true",
+		},
+		logging: {
+			enabled: false,
 		},
 	});
 

@@ -5,7 +5,12 @@ import type {
 	GameProcessEvents,
 	GameProcessInfo,
 	LaunchGameOptions,
+	LoggingOptions,
 } from "../@types";
+import { initializeLogging } from "../logging";
+import { ConfigurableLogger } from "../logging/ConfigurableLogger";
+import type { ILogger } from "../logging/ILogger";
+import { Logger } from "../logging/Logger";
 import { GameEventEmitter } from "./EventEmitter";
 import { ProcessManager } from "./ProcessManager";
 
@@ -13,6 +18,7 @@ export class GameLauncher implements GameLauncherInterface {
 	private eventEmitter: GameEventEmitter;
 	private processManager: ProcessManager;
 	private options: GameLauncherOptions;
+	private logger!: ILogger;
 
 	constructor(options: GameLauncherOptions = {}) {
 		this.options = {
@@ -21,6 +27,9 @@ export class GameLauncher implements GameLauncherInterface {
 			monitoringInterval: 1000,
 			...options,
 		};
+
+		// Initialize logging system
+		this.initializeLogging();
 
 		this.eventEmitter = new GameEventEmitter();
 
@@ -32,12 +41,117 @@ export class GameLauncher implements GameLauncherInterface {
 			...(this.options.enableProcessMonitoring !== undefined && {
 				enableResourceMonitoring: this.options.enableProcessMonitoring,
 			}),
+			// Pass logger to ProcessManager
+			logger: this.logger,
 		};
 
 		this.processManager = new ProcessManager(
 			this.eventEmitter,
 			processManagerOptions,
 		);
+
+		this.logger.info("GameLauncher initialized", {
+			maxConcurrentGames: this.options.maxConcurrentGames,
+			enableProcessMonitoring: this.options.enableProcessMonitoring,
+			monitoringInterval: this.options.monitoringInterval,
+			loggingEnabled: this.options.logging?.enabled ?? true,
+		});
+	}
+
+	/**
+	 * Initialize the logging system based on configuration
+	 */
+	private initializeLogging(): void {
+		const loggingOptions = this.options.logging;
+
+		// Initialize global logging system first
+		if (loggingOptions?.enabled === false) {
+			// Initialize with disabled logging
+			initializeLogging({
+				enableConsole: false,
+				enableFile: false,
+				enableAudit: false,
+			});
+			this.logger = this.createNoOpLogger();
+			return;
+		}
+
+		// If a custom logger is provided, use it
+		if (loggingOptions?.customLogger) {
+			this.logger = loggingOptions.customLogger;
+			return;
+		}
+
+		// Use ConfigurableLogger if advanced options are specified
+		if (
+			loggingOptions &&
+			(loggingOptions.format ||
+				loggingOptions.outputs ||
+				loggingOptions.security)
+		) {
+			this.logger = new ConfigurableLogger(loggingOptions);
+			// Initialize global logging with the same config
+			if (loggingOptions.config) {
+				initializeLogging(loggingOptions.config);
+			}
+			return;
+		}
+
+		// Use basic Logger with simple config
+		const basicConfig = loggingOptions?.config || {
+			level: 1, // INFO
+			enableConsole: true,
+			enableFile: false,
+			enableAudit: true,
+		};
+
+		// Initialize global logging system
+		initializeLogging(basicConfig);
+		this.logger = new Logger(basicConfig);
+	}
+
+	/**
+	 * Create a no-operation logger that doesn't output anything
+	 */
+	private createNoOpLogger(): ILogger {
+		return {
+			debug: () => {},
+			info: () => {},
+			warn: () => {},
+			error: () => {},
+		};
+	}
+
+	/**
+	 * Update logging configuration at runtime
+	 */
+	updateLoggingConfig(loggingOptions: LoggingOptions): void {
+		this.options.logging = { ...this.options.logging, ...loggingOptions };
+		this.initializeLogging();
+
+		// Update ProcessManager's logger if it supports it
+		if (
+			"updateLogger" in this.processManager &&
+			typeof this.processManager.updateLogger === "function"
+		) {
+			this.processManager.updateLogger(this.logger);
+		}
+
+		this.logger.info("Logging configuration updated", { loggingOptions });
+	}
+
+	/**
+	 * Get the current logger instance
+	 */
+	getLogger(): ILogger {
+		return this.logger;
+	}
+
+	/**
+	 * Enable or disable logging at runtime
+	 */
+	setLoggingEnabled(enabled: boolean): void {
+		this.updateLoggingConfig({ enabled });
 	}
 
 	async launchGame(options: LaunchGameOptions): Promise<string> {
@@ -102,14 +216,14 @@ export class GameLauncher implements GameLauncherInterface {
 	getRunningGames(): string[] {
 		const allProcesses = this.processManager.getAllProcesses();
 		const runningGames: string[] = [];
-		
+
 		// More efficient iteration without intermediate arrays
 		for (const [gameId, info] of allProcesses) {
 			if (info.status === "running" || info.status === "detached") {
 				runningGames.push(gameId);
 			}
 		}
-		
+
 		return runningGames;
 	}
 

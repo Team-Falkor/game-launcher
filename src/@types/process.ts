@@ -19,6 +19,19 @@ export interface GameProcessInfo {
 export interface ProcessManagerOptions {
 	monitoringInterval?: number | undefined;
 	enableResourceMonitoring?: boolean | undefined;
+	logger?:
+		| {
+				logSecurityEvent?: (
+					event: string,
+					success: boolean,
+					details: Record<string, unknown>,
+				) => void;
+				debug(message: string, context?: Record<string, unknown>): void;
+				info(message: string, context?: Record<string, unknown>): void;
+				warn(message: string, context?: Record<string, unknown>): void;
+				error(message: string, context?: Record<string, unknown>): void;
+		  }
+		| undefined;
 }
 
 export interface ProcessManagerInterface {

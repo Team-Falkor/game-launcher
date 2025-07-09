@@ -1,20 +1,53 @@
 import {
-  type ChildProcess,
-  execSync,
-  type SpawnOptions,
-  spawn,
+	type ChildProcess,
+	execSync,
+	type SpawnOptions,
+	spawn,
 } from "node:child_process";
 import * as sudo from "@expo/sudo-prompt";
 import type {
-  GameProcessInfo,
-  GameStatus,
-  ProcessManagerInterface,
-  ProcessManagerOptions,
-  ProcessStartOptions,
+	GameProcessInfo,
+	GameStatus,
+	ProcessManagerInterface,
+	ProcessManagerOptions,
+	ProcessStartOptions,
 } from "../@types";
+import { getSecurityAuditLogger, SecurityEvent } from "../logging";
 import { getPlatform } from "../utils/platform";
-import { validateExecutable, SecurityValidator, CommandSanitizer, PathValidator } from "../utils/validation";
+import {
+	CommandSanitizer,
+	PathValidator,
+	SecurityValidator,
+	validateExecutable,
+} from "../utils/validation";
 import type { GameEventEmitter } from "./EventEmitter";
+
+// Security audit details interface to match SecurityAuditLogger expectations
+interface SecurityAuditDetails {
+	gameId?: string;
+	userId?: string;
+	sourceIp?: string;
+	executable?: string;
+	arguments?: string[];
+	workingDirectory?: string;
+	environment?: Record<string, string>;
+	error?: string;
+	blockedValue?: string;
+	sanitizedValue?: string;
+	[key: string]:
+		| string
+		| number
+		| boolean
+		| string[]
+		| Record<string, string>
+		| null
+		| undefined;
+}
+
+// Extended ChildProcess interface for admin processes
+interface ExtendedChildProcess extends ChildProcess {
+	actualPid?: number;
+}
 
 export class ProcessManager implements ProcessManagerInterface {
 	private processes = new Map<string, ChildProcess>();
@@ -22,11 +55,25 @@ export class ProcessManager implements ProcessManagerInterface {
 	// Use WeakRef for process references to prevent memory leaks
 	private processRefs = new Map<string, WeakRef<ChildProcess>>();
 	// Track event listeners for proper cleanup
-	private processEventListeners = new Map<string, Map<string, Function[]>>();
+	private processEventListeners = new Map<
+		string,
+		Map<string, ((...args: unknown[]) => void)[]>
+	>();
 	private eventEmitter: GameEventEmitter;
 	private monitoringInterval?: NodeJS.Timeout | undefined;
 	private detachedMonitoringIntervals = new Map<string, NodeJS.Timeout>();
 	private options: ProcessManagerOptions;
+	private logger: {
+		logSecurityEvent?: (
+			event: string,
+			success: boolean,
+			details: Record<string, unknown>,
+		) => void;
+		info: (message: string, context?: Record<string, unknown>) => void;
+		error: (message: string, context?: Record<string, unknown>) => void;
+		warn: (message: string, context?: Record<string, unknown>) => void;
+		debug: (message: string, context?: Record<string, unknown>) => void;
+	};
 	// Track mock processes for proper cleanup
 	private mockProcesses = new Set<string>();
 	// RACE CONDITION FIX: Process state synchronization
@@ -43,6 +90,38 @@ export class ProcessManager implements ProcessManagerInterface {
 			enableResourceMonitoring: true,
 			...options,
 		};
+
+		// Use provided logger or fallback to security audit logger with wrapper
+		if (this.options.logger) {
+			this.logger = this.options.logger;
+		} else {
+			const auditLogger = getSecurityAuditLogger();
+			this.logger = {
+				logSecurityEvent: (
+					event: string,
+					success: boolean,
+					details: Record<string, unknown>,
+				) => {
+					auditLogger.logSecurityEvent(
+						event as SecurityEvent,
+						success,
+						details as SecurityAuditDetails,
+					);
+				},
+				info: (message: string, context?: Record<string, unknown>) => {
+					console.info(`[ProcessManager] ${message}`, context || {});
+				},
+				error: (message: string, context?: Record<string, unknown>) => {
+					console.error(`[ProcessManager] ${message}`, context || {});
+				},
+				warn: (message: string, context?: Record<string, unknown>) => {
+					console.warn(`[ProcessManager] ${message}`, context || {});
+				},
+				debug: (message: string, context?: Record<string, unknown>) => {
+					console.debug(`[ProcessManager] ${message}`, context || {});
+				},
+			};
+		}
 
 		if (this.options.enableResourceMonitoring) {
 			this.startMonitoring();
@@ -65,13 +144,37 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		// SECURITY: Enhanced validation using security framework
 		await validateExecutable(executable);
-		const sanitizedExecutable = SecurityValidator.sanitizeExecutablePath(executable);
+		const sanitizedExecutable =
+			SecurityValidator.sanitizeExecutablePath(executable);
 		const sanitizedArgs = SecurityValidator.sanitizeArguments(args);
-		
+
 		// Validate paths
 		PathValidator.validateExecutablePath(sanitizedExecutable);
 		if (options.workingDirectory) {
 			PathValidator.validateWorkingDirectory(options.workingDirectory);
+		}
+
+		// Log admin execution attempt
+		if (options.runAsAdmin) {
+			if (this.logger.logSecurityEvent) {
+				this.logger.logSecurityEvent(SecurityEvent.ADMIN_EXECUTION, true, {
+					gameId,
+					executable: sanitizedExecutable,
+					arguments: sanitizedArgs,
+					...(options.workingDirectory && {
+						workingDirectory: options.workingDirectory,
+					}),
+				});
+			} else {
+				this.logger.info("Admin execution attempt", {
+					gameId,
+					executable: sanitizedExecutable,
+					arguments: sanitizedArgs,
+					...(options.workingDirectory && {
+						workingDirectory: options.workingDirectory,
+					}),
+				});
+			}
 		}
 
 		// SECURITY: Sanitize environment variables
@@ -85,7 +188,9 @@ export class ProcessManager implements ProcessManagerInterface {
 		let combinedEnvironment = cleanEnvironment;
 		if (options.environment) {
 			// Merge and sanitize user-provided environment variables
-			const userEnvironment = SecurityValidator.validateEnvironment(options.environment);
+			const userEnvironment = SecurityValidator.validateEnvironment(
+				options.environment,
+			);
 			combinedEnvironment = { ...cleanEnvironment, ...userEnvironment };
 		}
 
@@ -98,9 +203,9 @@ export class ProcessManager implements ProcessManagerInterface {
 			environment: combinedEnvironment,
 			status: "launching",
 			startTime: new Date(),
-			metadata: { 
-				...options.metadata || {},
-				...(options.runAsAdmin && { runAsAdmin: true })
+			metadata: {
+				...(options.metadata || {}),
+				...(options.runAsAdmin && { runAsAdmin: true }),
 			},
 		};
 
@@ -167,11 +272,35 @@ export class ProcessManager implements ProcessManagerInterface {
 			processInfo.status = "running";
 
 			// For admin processes, check if we found a real PID and update metadata
-			if (options.runAsAdmin && (childProcess as any).actualPid) {
+			if (
+				options.runAsAdmin &&
+				(childProcess as ExtendedChildProcess).actualPid
+			) {
 				processInfo.metadata = {
 					...processInfo.metadata,
-					hasRealPid: true
+					hasRealPid: true,
 				};
+			}
+
+			// Log successful process launch
+			if (this.logger.logSecurityEvent) {
+				this.logger.logSecurityEvent(SecurityEvent.PROCESS_LAUNCH, true, {
+					gameId,
+					pid: childProcess.pid,
+					executable: sanitizedExecutable,
+					arguments: sanitizedArgs,
+					workingDirectory: processInfo.workingDirectory,
+					runAsAdmin: options.runAsAdmin || false,
+				});
+			} else {
+				this.logger.info("Process launched successfully", {
+					gameId,
+					pid: childProcess.pid,
+					executable: sanitizedExecutable,
+					arguments: sanitizedArgs,
+					workingDirectory: processInfo.workingDirectory,
+					runAsAdmin: options.runAsAdmin || false,
+				});
 			}
 
 			this.processes.set(gameId, childProcess);
@@ -211,6 +340,25 @@ export class ProcessManager implements ProcessManagerInterface {
 		try {
 			info.status = "closing";
 			this.updateProcessStatus(gameId, "closing");
+
+			// Log process termination attempt
+			if (this.logger.logSecurityEvent) {
+				this.logger.logSecurityEvent(SecurityEvent.PROCESS_TERMINATION, true, {
+					gameId,
+					pid: info.pid,
+					executable: info.executable,
+					force,
+					signal: force ? "SIGKILL" : "SIGTERM",
+				});
+			} else {
+				this.logger.info("Process termination attempt", {
+					gameId,
+					pid: info.pid,
+					executable: info.executable,
+					force,
+					signal: force ? "SIGKILL" : "SIGTERM",
+				});
+			}
 
 			if (getPlatform() === "win32") {
 				if (force) {
@@ -273,19 +421,24 @@ export class ProcessManager implements ProcessManagerInterface {
 			let fullCommand: string;
 			try {
 				// SECURITY: Validate and sanitize all inputs
-				const sanitizedExecutable = SecurityValidator.sanitizeExecutablePath(executable);
+				const sanitizedExecutable =
+					SecurityValidator.sanitizeExecutablePath(executable);
 				const sanitizedArgs = SecurityValidator.sanitizeArguments(args);
-				const sanitizedEnvironment = SecurityValidator.validateEnvironment(environment);
-				
+				const sanitizedEnvironment =
+					SecurityValidator.validateEnvironment(environment);
+
 				// Validate paths
 				PathValidator.validateExecutablePath(sanitizedExecutable);
 				PathValidator.validateWorkingDirectory(workingDirectory);
-				
+
 				// Use secure command construction
-				const escapedExecutable = CommandSanitizer.escapeShellArg(sanitizedExecutable);
-				const escapedArgs = sanitizedArgs.map(arg => CommandSanitizer.escapeShellArg(arg));
+				const escapedExecutable =
+					CommandSanitizer.escapeShellArg(sanitizedExecutable);
+				const escapedArgs = sanitizedArgs.map((arg) =>
+					CommandSanitizer.escapeShellArg(arg),
+				);
 				const command = [escapedExecutable, ...escapedArgs].join(" ");
-				
+
 				// Validate the final command
 				CommandSanitizer.validateCommand(command);
 
@@ -313,7 +466,7 @@ export class ProcessManager implements ProcessManagerInterface {
 						)
 						.map(([key, value]) => {
 							// Escape environment variable values
-							const escapedValue = value.replace(/'/g, "'\\''")
+							const escapedValue = value.replace(/'/g, "'\\''");
 							return `export ${key}='${escapedValue}'`;
 						})
 						.join("; ");
@@ -321,18 +474,22 @@ export class ProcessManager implements ProcessManagerInterface {
 				}
 
 				// Change directory command with sanitized path
-				const sanitizedWorkingDir = SecurityValidator.sanitizeExecutablePath(workingDirectory);
+				const sanitizedWorkingDir =
+					SecurityValidator.sanitizeExecutablePath(workingDirectory);
 				const cdCommand =
 					platform === "win32"
 						? `cd /d "${sanitizedWorkingDir.replace(/"/g, '\\"')}" && `
 						: `cd '${sanitizedWorkingDir.replace(/'/g, "'\\''")}' && `;
 
 				fullCommand = `${cdCommand}${envCommand}${command}`;
-				
+
 				// Final validation of the complete command
 				CommandSanitizer.validateCommand(fullCommand);
-			} catch (securityError: any) {
-				const securityMessage = securityError instanceof Error ? securityError.message : "Unknown security error";
+			} catch (securityError: unknown) {
+				const securityMessage =
+					securityError instanceof Error
+						? securityError.message
+						: "Unknown security error";
 				reject(new Error(`Security validation failed: ${securityMessage}`));
 				return;
 			}
@@ -341,9 +498,20 @@ export class ProcessManager implements ProcessManagerInterface {
 			// This ensures consistent security validation across all execution paths
 			const sanitizedEnv = SecurityValidator.validateEnvironment(environment);
 
+			// Filter environment variables for sudo-prompt compatibility
+			// sudo-prompt has stricter validation and rejects variable names with parentheses
+			const sudoCompatibleEnv: Record<string, string> = {};
+			for (const [key, value] of Object.entries(sanitizedEnv)) {
+				// Skip environment variables that sudo-prompt cannot handle
+				// This includes variables with parentheses like "CommonProgramFiles(x86)"
+				if (!/[()]/g.test(key)) {
+					sudoCompatibleEnv[key] = value;
+				}
+			}
+
 			const sudoOptions = {
 				name: "Game Launcher",
-				env: sanitizedEnv,
+				env: sudoCompatibleEnv,
 			};
 
 			// Record the time before launching to help find the actual PID
@@ -357,34 +525,32 @@ export class ProcessManager implements ProcessManagerInterface {
 				}
 
 				// Try to find the actual PID of the elevated process
-			const actualPid = await this.findElevatedProcessPid(
-				executableName,
-				launchTime,
-			);
+				const actualPid = await this.findElevatedProcessPid(
+					executableName,
+					launchTime,
+				);
 
-			// Create a mock ChildProcess-like object for admin processes
-			// Since sudo-prompt doesn't return a ChildProcess, we need to simulate one
-			const stdoutStr = stdout
-				? typeof stdout === "string"
-					? stdout
-					: stdout.toString()
-				: "";
-			const stderrStr = stderr
-				? typeof stderr === "string"
-					? stderr
-					: stderr.toString()
-				: "";
-			const mockProcess = this.createMockChildProcess(
-				stdoutStr,
-				stderrStr,
-				captureOutput,
-				actualPid,
-				gameId,
-			);
-			
+				// Create a mock ChildProcess-like object for admin processes
+				// Since sudo-prompt doesn't return a ChildProcess, we need to simulate one
+				const stdoutStr = stdout
+					? typeof stdout === "string"
+						? stdout
+						: stdout.toString()
+					: "";
+				const stderrStr = stderr
+					? typeof stderr === "string"
+						? stderr
+						: stderr.toString()
+					: "";
+				const mockProcess = this.createMockChildProcess(
+					stdoutStr,
+					stderrStr,
+					captureOutput,
+					actualPid,
+					gameId,
+				);
 
-			
-			resolve(mockProcess);
+				resolve(mockProcess);
 			});
 		});
 	}
@@ -399,38 +565,47 @@ export class ProcessManager implements ProcessManagerInterface {
 		// Create a minimal mock ChildProcess for admin processes
 		// This is necessary because sudo-prompt doesn't return a real ChildProcess
 		const pid = actualPid || Math.floor(Math.random() * 100000) + 1000;
-		
+
 		// Create a proper EventEmitter-like object with cleanup tracking
-		const eventListeners = new Map<string, Function[]>();
-		
+		const eventListeners = new Map<string, ((...args: unknown[]) => void)[]>();
+
 		// Track this mock process for cleanup if gameId is provided
 		if (gameId) {
 			this.mockProcesses.add(gameId);
 			this.processEventListeners.set(gameId, eventListeners);
 		}
-		
-		const addListener = (event: string, listener: Function) => {
+
+		const addListener = (
+			event: string,
+			listener: (...args: unknown[]) => void,
+		) => {
 			if (!eventListeners.has(event)) {
 				eventListeners.set(event, []);
 			}
-			eventListeners.get(event)!.push(listener);
-		};
-		
-		const emit = (event: string, ...args: any[]) => {
 			const listeners = eventListeners.get(event);
 			if (listeners) {
-				listeners.forEach(listener => {
+				listeners.push(listener);
+			}
+		};
+
+		const emit = (event: string, ...args: unknown[]) => {
+			const listeners = eventListeners.get(event);
+			if (listeners) {
+				listeners.forEach((listener) => {
 					try {
 						listener(...args);
 					} catch (error) {
-						console.error(`Error in mock process event listener for ${event}:`, error);
+						console.error(
+							`Error in mock process event listener for ${event}:`,
+							error,
+						);
 					}
 				});
 				return true;
 			}
 			return false;
 		};
-		
+
 		const mockProcess = {
 			pid: pid,
 			actualPid: actualPid, // Store the actual PID for metadata purposes
@@ -441,7 +616,9 @@ export class ProcessManager implements ProcessManagerInterface {
 						if (getPlatform() === "win32") {
 							// Use taskkill for Windows
 							const force = signal === "SIGKILL" || signal === 9;
-							const cmd = force ? `taskkill /F /PID ${actualPid}` : `taskkill /PID ${actualPid}`;
+							const cmd = force
+								? `taskkill /F /PID ${actualPid}`
+								: `taskkill /PID ${actualPid}`;
 							execSync(cmd, { stdio: "ignore" });
 						} else {
 							// Use kill for Unix-like systems
@@ -465,8 +642,8 @@ export class ProcessManager implements ProcessManagerInterface {
 			stdio: [null, null, null],
 			connected: false,
 			on: addListener,
-			once: (event: string, listener: Function) => {
-				const onceWrapper = (...args: any[]) => {
+			once: (event: string, listener: (...args: unknown[]) => void) => {
+				const onceWrapper = (...args: unknown[]) => {
 					listener(...args);
 					// Remove the listener after it's called once
 					const listeners = eventListeners.get(event);
@@ -479,7 +656,7 @@ export class ProcessManager implements ProcessManagerInterface {
 				};
 				addListener(event, onceWrapper);
 			},
-			off: (event: string, listener: Function) => {
+			off: (event: string, listener: (...args: unknown[]) => void) => {
 				const listeners = eventListeners.get(event);
 				if (listeners) {
 					const index = listeners.indexOf(listener);
@@ -488,7 +665,10 @@ export class ProcessManager implements ProcessManagerInterface {
 					}
 				}
 			},
-			removeListener: (event: string, listener: Function) => {
+			removeListener: (
+				event: string,
+				listener: (...args: unknown[]) => void,
+			) => {
 				const listeners = eventListeners.get(event);
 				if (listeners) {
 					const index = listeners.indexOf(listener);
@@ -637,13 +817,16 @@ export class ProcessManager implements ProcessManagerInterface {
 
 			// MEMORY LEAK FIX: Comprehensive cleanup
 			this.cleanupProcessResources(gameId);
-		}).catch(error => {
+		}).catch((error) => {
 			console.error(`Error handling process exit for ${gameId}:`, error);
 		});
 	}
 
 	// RACE CONDITION FIX: Atomic process operations
-	private async withProcessLock<T>(gameId: string, operation: () => Promise<T> | T): Promise<T> {
+	private async withProcessLock<T>(
+		gameId: string,
+		operation: () => Promise<T> | T,
+	): Promise<T> {
 		// Wait for any existing operation to complete
 		const existingLock = this.processStateLocks.get(gameId);
 		if (existingLock) {
@@ -651,8 +834,8 @@ export class ProcessManager implements ProcessManagerInterface {
 		}
 
 		// Create new lock for this operation
-		let resolveLock: () => void;
-		const lockPromise = new Promise<void>(resolve => {
+		let resolveLock!: () => void;
+		const lockPromise = new Promise<void>((resolve) => {
 			resolveLock = resolve;
 		});
 		this.processStateLocks.set(gameId, lockPromise);
@@ -666,7 +849,9 @@ export class ProcessManager implements ProcessManagerInterface {
 			// Clean up lock and operation tracking
 			this.processingOperations.delete(gameId);
 			this.processStateLocks.delete(gameId);
-			resolveLock!();
+			if (resolveLock) {
+				resolveLock();
+			}
 		}
 	}
 
@@ -743,18 +928,24 @@ export class ProcessManager implements ProcessManagerInterface {
 						},
 					);
 
-					const lines = result.split("\n").filter(line => line.trim() && !line.includes("Node"));
-					
+					const lines = result
+						.split("\n")
+						.filter((line) => line.trim() && !line.includes("Node"));
+
 					for (const line of lines) {
 						const parts = line.split(",");
 						if (parts.length >= 3) {
 							const creationDate = parts[1]?.trim();
 							const processId = parts[2]?.trim();
-							
-							if (creationDate && processId && !isNaN(Number(processId))) {
+
+							if (
+								creationDate &&
+								processId &&
+								!Number.isNaN(Number(processId))
+							) {
 								// Parse Windows WMI datetime format (YYYYMMDDHHMMSS.ffffff+TZO)
 								const dateMatch = creationDate.match(/^(\d{14})/);
-								if (dateMatch && dateMatch[1]) {
+								if (dateMatch?.[1]) {
 									try {
 										const dateStr = dateMatch[1];
 										const year = parseInt(dateStr.substr(0, 4));
@@ -763,13 +954,30 @@ export class ProcessManager implements ProcessManagerInterface {
 										const hour = parseInt(dateStr.substr(8, 2));
 										const minute = parseInt(dateStr.substr(10, 2));
 										const second = parseInt(dateStr.substr(12, 2));
-										
+
 										// Validate parsed values
-										if (year > 1970 && month >= 0 && month < 12 && day >= 1 && day <= 31 &&
-											hour >= 0 && hour < 24 && minute >= 0 && minute < 60 && second >= 0 && second < 60) {
-											
-											const processTime = new Date(year, month, day, hour, minute, second).getTime();
-											
+										if (
+											year > 1970 &&
+											month >= 0 &&
+											month < 12 &&
+											day >= 1 &&
+											day <= 31 &&
+											hour >= 0 &&
+											hour < 24 &&
+											minute >= 0 &&
+											minute < 60 &&
+											second >= 0 &&
+											second < 60
+										) {
+											const processTime = new Date(
+												year,
+												month,
+												day,
+												hour,
+												minute,
+												second,
+											).getTime();
+
 											// Check if process was created within our search window
 											if (Math.abs(processTime - launchTime) <= searchWindow) {
 												const pid = Number(processId);
@@ -778,10 +986,7 @@ export class ProcessManager implements ProcessManagerInterface {
 												}
 											}
 										}
-									} catch (parseError) {
-										// Skip invalid date entries
-										continue;
-									}
+									} catch {}
 								}
 							}
 						}
@@ -798,12 +1003,12 @@ export class ProcessManager implements ProcessManagerInterface {
 							},
 						);
 
-						const lines = result.split("\n").filter(line => line.trim());
+						const lines = result.split("\n").filter((line) => line.trim());
 						if (lines.length > 0) {
 							const firstLine = lines[0];
 							if (firstLine) {
-								const pidMatch = firstLine.match(/"([^"]+)","(\d+)"/); 
-								if (pidMatch && pidMatch[2]) {
+								const pidMatch = firstLine.match(/"([^"]+)","(\d+)"/);
+								if (pidMatch?.[2]) {
 									const pid = Number(pidMatch[2]);
 									if (pid > 0) {
 										return pid;
@@ -827,14 +1032,14 @@ export class ProcessManager implements ProcessManagerInterface {
 						},
 					);
 
-					const lines = result.split("\n").filter(line => line.trim());
+					const lines = result.split("\n").filter((line) => line.trim());
 					for (const line of lines) {
 						const parts = line.trim().split(/\s+/);
 						if (parts.length >= 6) {
 							const pid = parts[0];
 							// For Unix systems, we'll just return the first matching process
 							// as getting exact creation time is more complex
-							if (!isNaN(Number(pid))) {
+							if (!Number.isNaN(Number(pid))) {
 								const pidNum = Number(pid);
 								if (pidNum > 0) {
 									return pidNum;
@@ -851,7 +1056,7 @@ export class ProcessManager implements ProcessManagerInterface {
 							encoding: "utf8",
 						});
 						const pid = result.trim().split("\n")[0];
-						if (pid && !isNaN(Number(pid))) {
+						if (pid && !Number.isNaN(Number(pid))) {
 							const pidNum = Number(pid);
 							if (pidNum > 0) {
 								return pidNum;
@@ -863,7 +1068,10 @@ export class ProcessManager implements ProcessManagerInterface {
 				}
 			}
 		} catch (error) {
-			console.warn(`Failed to find elevated process PID for ${executableName}:`, error);
+			console.warn(
+				`Failed to find elevated process PID for ${executableName}:`,
+				error,
+			);
 		}
 
 		return undefined;
@@ -958,8 +1166,11 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		this.monitoringInterval = setInterval(() => {
 			// Batch process checks for better performance
-			const runningProcesses = new Map<string, { info: GameProcessInfo; process: ChildProcess }>();
-			
+			const runningProcesses = new Map<
+				string,
+				{ info: GameProcessInfo; process: ChildProcess }
+			>();
+
 			// Collect all running processes first
 			this.processInfo.forEach((info, gameId) => {
 				if (info.status === "running") {
@@ -981,10 +1192,15 @@ export class ProcessManager implements ProcessManagerInterface {
 		}, this.options.monitoringInterval);
 	}
 
-	private batchCheckWindowsProcesses(processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>): void {
+	private batchCheckWindowsProcesses(
+		processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>,
+	): void {
 		// Group processes by type for efficient batch checking
 		const regularPids: number[] = [];
-		const adminProcesses = new Map<string, { info: GameProcessInfo; process: ChildProcess }>();
+		const adminProcesses = new Map<
+			string,
+			{ info: GameProcessInfo; process: ChildProcess }
+		>();
 		const pidToGameId = new Map<number, string>();
 
 		processes.forEach(({ info, process }, gameId) => {
@@ -1006,24 +1222,27 @@ export class ProcessManager implements ProcessManagerInterface {
 		// Batch check regular processes
 		if (regularPids.length > 0) {
 			try {
-				const pidList = regularPids.join(',');
-				const result = execSync(`tasklist /FI "PID eq ${pidList}" /FO CSV /NH`, {
-					stdio: "pipe",
-					timeout: 2000,
-					encoding: "utf8",
-				});
+				const pidList = regularPids.join(",");
+				const result = execSync(
+					`tasklist /FI "PID eq ${pidList}" /FO CSV /NH`,
+					{
+						stdio: "pipe",
+						timeout: 2000,
+						encoding: "utf8",
+					},
+				);
 
 				const foundPids = new Set<number>();
-				const lines = result.split('\n').filter(line => line.trim());
+				const lines = result.split("\n").filter((line) => line.trim());
 				for (const line of lines) {
-					const match = line.match(/"[^"]*","(\d+)"/); 
-					if (match && match[1]) {
+					const match = line.match(/"[^"]*","(\d+)"/);
+					if (match?.[1]) {
 						foundPids.add(Number(match[1]));
 					}
 				}
 
 				// Check which processes are missing
-				regularPids.forEach(pid => {
+				regularPids.forEach((pid) => {
 					if (!foundPids.has(pid)) {
 						const gameId = pidToGameId.get(pid);
 						if (gameId) {
@@ -1031,9 +1250,9 @@ export class ProcessManager implements ProcessManagerInterface {
 						}
 					}
 				});
-			} catch (error) {
+			} catch {
 				// Fallback to individual checks
-				regularPids.forEach(pid => {
+				regularPids.forEach((pid) => {
 					const gameId = pidToGameId.get(pid);
 					if (gameId) {
 						try {
@@ -1059,18 +1278,27 @@ export class ProcessManager implements ProcessManagerInterface {
 						timeout: 1000,
 						encoding: "utf8",
 					});
-					if (result.includes("INFO: No tasks are running") || result.trim() === "") {
+					if (
+						result.includes("INFO: No tasks are running") ||
+						result.trim() === ""
+					) {
 						this.handleProcessExit(gameId, 0, null);
 					}
 				} else {
 					// Admin process with mock PID - check by executable name
 					const executableName = info.executable.split(/[\\/]/).pop() || "";
-					const result = execSync(`tasklist /FI "IMAGENAME eq ${executableName}" /NH`, {
-						stdio: "pipe",
-						timeout: 1000,
-						encoding: "utf8",
-					});
-					if (result.includes("INFO: No tasks are running") || result.trim() === "") {
+					const result = execSync(
+						`tasklist /FI "IMAGENAME eq ${executableName}" /NH`,
+						{
+							stdio: "pipe",
+							timeout: 1000,
+							encoding: "utf8",
+						},
+					);
+					if (
+						result.includes("INFO: No tasks are running") ||
+						result.trim() === ""
+					) {
 						this.handleProcessExit(gameId, 0, null);
 					}
 				}
@@ -1080,7 +1308,9 @@ export class ProcessManager implements ProcessManagerInterface {
 		});
 	}
 
-	private batchCheckUnixProcesses(processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>): void {
+	private batchCheckUnixProcesses(
+		processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>,
+	): void {
 		processes.forEach(({ info, process }, gameId) => {
 			// RACE CONDITION FIX: Skip if operation is already in progress
 			if (this.isProcessOperationInProgress(gameId)) {
@@ -1100,8 +1330,8 @@ export class ProcessManager implements ProcessManagerInterface {
 						this.handleProcessExit(gameId, null, null);
 					}
 				}
-			} catch (error) {
-				console.warn(`Error checking Unix process ${gameId}:`, error);
+			} catch {
+				// Error checking Unix process - process likely terminated
 			}
 		});
 	}
@@ -1125,7 +1355,7 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		// MEMORY LEAK FIX: Comprehensive cleanup of all resources
 		const allGameIds = Array.from(this.processes.keys());
-		allGameIds.forEach(gameId => this.cleanupProcessResources(gameId));
+		allGameIds.forEach((gameId) => this.cleanupProcessResources(gameId));
 
 		// Clear any remaining references
 		this.processes.clear();
