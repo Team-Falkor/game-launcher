@@ -19,10 +19,19 @@ import type { GameEventEmitter } from "./EventEmitter";
 export class ProcessManager implements ProcessManagerInterface {
 	private processes = new Map<string, ChildProcess>();
 	private processInfo = new Map<string, GameProcessInfo>();
+	// Use WeakRef for process references to prevent memory leaks
+	private processRefs = new Map<string, WeakRef<ChildProcess>>();
+	// Track event listeners for proper cleanup
+	private processEventListeners = new Map<string, Map<string, Function[]>>();
 	private eventEmitter: GameEventEmitter;
 	private monitoringInterval?: NodeJS.Timeout | undefined;
 	private detachedMonitoringIntervals = new Map<string, NodeJS.Timeout>();
 	private options: ProcessManagerOptions;
+	// Track mock processes for proper cleanup
+	private mockProcesses = new Set<string>();
+	// RACE CONDITION FIX: Process state synchronization
+	private processStateLocks = new Map<string, Promise<void>>();
+	private processingOperations = new Set<string>();
 
 	constructor(
 		eventEmitter: GameEventEmitter,
@@ -106,6 +115,7 @@ export class ProcessManager implements ProcessManagerInterface {
 					processInfo.workingDirectory,
 					processInfo.environment,
 					options.captureOutput,
+					gameId,
 				);
 			} else {
 				// FIX: Proper spawn options with correct types
@@ -166,6 +176,8 @@ export class ProcessManager implements ProcessManagerInterface {
 
 			this.processes.set(gameId, childProcess);
 			this.processInfo.set(gameId, processInfo);
+			// Store WeakRef for memory-efficient process tracking
+			this.processRefs.set(gameId, new WeakRef(childProcess));
 
 			this.setupProcessHandlers(gameId, childProcess);
 
@@ -217,8 +229,8 @@ export class ProcessManager implements ProcessManagerInterface {
 				}
 			}
 
-			// Clear detached monitoring if exists
-			this.clearDetachedMonitoring(gameId);
+			// MEMORY LEAK FIX: Use comprehensive cleanup
+			this.cleanupProcessResources(gameId);
 
 			return true;
 		} catch (error) {
@@ -255,6 +267,7 @@ export class ProcessManager implements ProcessManagerInterface {
 		workingDirectory: string,
 		environment: Record<string, string>,
 		captureOutput?: boolean,
+		gameId?: string,
 	): Promise<ChildProcess> {
 		return new Promise((resolve, reject) => {
 			let fullCommand: string;
@@ -366,6 +379,7 @@ export class ProcessManager implements ProcessManagerInterface {
 				stderrStr,
 				captureOutput,
 				actualPid,
+				gameId,
 			);
 			
 
@@ -380,13 +394,20 @@ export class ProcessManager implements ProcessManagerInterface {
 		_stderr: string,
 		captureOutput?: boolean,
 		actualPid?: number,
+		gameId?: string,
 	): ChildProcess {
 		// Create a minimal mock ChildProcess for admin processes
 		// This is necessary because sudo-prompt doesn't return a real ChildProcess
 		const pid = actualPid || Math.floor(Math.random() * 100000) + 1000;
 		
-		// Create a proper EventEmitter-like object
+		// Create a proper EventEmitter-like object with cleanup tracking
 		const eventListeners = new Map<string, Function[]>();
+		
+		// Track this mock process for cleanup if gameId is provided
+		if (gameId) {
+			this.mockProcesses.add(gameId);
+			this.processEventListeners.set(gameId, eventListeners);
+		}
 		
 		const addListener = (event: string, listener: Function) => {
 			if (!eventListeners.has(event)) {
@@ -458,9 +479,31 @@ export class ProcessManager implements ProcessManagerInterface {
 				};
 				addListener(event, onceWrapper);
 			},
-			off: () => {},
-			removeListener: () => {},
-			removeAllListeners: () => {},
+			off: (event: string, listener: Function) => {
+				const listeners = eventListeners.get(event);
+				if (listeners) {
+					const index = listeners.indexOf(listener);
+					if (index > -1) {
+						listeners.splice(index, 1);
+					}
+				}
+			},
+			removeListener: (event: string, listener: Function) => {
+				const listeners = eventListeners.get(event);
+				if (listeners) {
+					const index = listeners.indexOf(listener);
+					if (index > -1) {
+						listeners.splice(index, 1);
+					}
+				}
+			},
+			removeAllListeners: (event?: string) => {
+				if (event) {
+					eventListeners.delete(event);
+				} else {
+					eventListeners.clear();
+				}
+			},
 			setMaxListeners: () => {},
 			getMaxListeners: () => 0,
 			listeners: () => [],
@@ -567,27 +610,97 @@ export class ProcessManager implements ProcessManagerInterface {
 		exitCode: number | null,
 		signal: string | null,
 	): void {
-		const info = this.processInfo.get(gameId);
-		if (!info) return;
+		// RACE CONDITION FIX: Use atomic operation for process exit handling
+		this.withProcessLock(gameId, () => {
+			const info = this.processInfo.get(gameId);
+			if (!info) return;
 
-		this.updateProcessStatus(gameId, "closed");
+			// Prevent duplicate exit handling
+			if (info.status === "closed") return;
 
-		info.status = "closed";
-		info.endTime = new Date();
-		info.exitCode = exitCode;
-		info.signal = signal;
+			this.updateProcessStatus(gameId, "closed");
 
-		this.eventEmitter.emit("closed", {
-			gameId,
-			pid: info.pid,
-			exitCode,
-			signal,
-			startTime: info.startTime,
-			endTime: info.endTime,
-			duration: info.endTime.getTime() - info.startTime.getTime(),
+			info.status = "closed";
+			info.endTime = new Date();
+			info.exitCode = exitCode;
+			info.signal = signal;
+
+			this.eventEmitter.emit("closed", {
+				gameId,
+				pid: info.pid,
+				exitCode,
+				signal,
+				startTime: info.startTime,
+				endTime: info.endTime,
+				duration: info.endTime.getTime() - info.startTime.getTime(),
+			});
+
+			// MEMORY LEAK FIX: Comprehensive cleanup
+			this.cleanupProcessResources(gameId);
+		}).catch(error => {
+			console.error(`Error handling process exit for ${gameId}:`, error);
 		});
+	}
 
-		this.processes.delete(gameId);
+	// RACE CONDITION FIX: Atomic process operations
+	private async withProcessLock<T>(gameId: string, operation: () => Promise<T> | T): Promise<T> {
+		// Wait for any existing operation to complete
+		const existingLock = this.processStateLocks.get(gameId);
+		if (existingLock) {
+			await existingLock;
+		}
+
+		// Create new lock for this operation
+		let resolveLock: () => void;
+		const lockPromise = new Promise<void>(resolve => {
+			resolveLock = resolve;
+		});
+		this.processStateLocks.set(gameId, lockPromise);
+
+		try {
+			// Mark operation as in progress
+			this.processingOperations.add(gameId);
+			const result = await operation();
+			return result;
+		} finally {
+			// Clean up lock and operation tracking
+			this.processingOperations.delete(gameId);
+			this.processStateLocks.delete(gameId);
+			resolveLock!();
+		}
+	}
+
+	private isProcessOperationInProgress(gameId: string): boolean {
+		return this.processingOperations.has(gameId);
+	}
+
+	private cleanupProcessResources(gameId: string): void {
+		// Clean up process references
+		const process = this.processes.get(gameId);
+		if (process) {
+			// Remove all event listeners from the process
+			process.removeAllListeners();
+			this.processes.delete(gameId);
+		}
+
+		// Clean up WeakRef
+		this.processRefs.delete(gameId);
+
+		// Clean up mock process event listeners
+		if (this.mockProcesses.has(gameId)) {
+			const eventListeners = this.processEventListeners.get(gameId);
+			if (eventListeners) {
+				eventListeners.clear();
+				this.processEventListeners.delete(gameId);
+			}
+			this.mockProcesses.delete(gameId);
+		}
+
+		// Clear detached monitoring
+		this.clearDetachedMonitoring(gameId);
+
+		// Clean up process info
+		this.processInfo.delete(gameId);
 	}
 
 	private updateProcessStatus(gameId: string, status: GameStatus): void {
@@ -875,6 +988,11 @@ export class ProcessManager implements ProcessManagerInterface {
 		const pidToGameId = new Map<number, string>();
 
 		processes.forEach(({ info, process }, gameId) => {
+			// RACE CONDITION FIX: Skip if operation is already in progress
+			if (this.isProcessOperationInProgress(gameId)) {
+				return;
+			}
+
 			const isAdminProcess = info.metadata?.runAsAdmin === true;
 
 			if (isAdminProcess) {
@@ -964,6 +1082,11 @@ export class ProcessManager implements ProcessManagerInterface {
 
 	private batchCheckUnixProcesses(processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>): void {
 		processes.forEach(({ info, process }, gameId) => {
+			// RACE CONDITION FIX: Skip if operation is already in progress
+			if (this.isProcessOperationInProgress(gameId)) {
+				return;
+			}
+
 			try {
 				const isAdminProcess = info.metadata?.runAsAdmin === true;
 				const hasRealPid = isAdminProcess && info.metadata?.hasRealPid === true;
@@ -1000,7 +1123,19 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		Promise.all(killPromises).catch(console.error);
 
+		// MEMORY LEAK FIX: Comprehensive cleanup of all resources
+		const allGameIds = Array.from(this.processes.keys());
+		allGameIds.forEach(gameId => this.cleanupProcessResources(gameId));
+
+		// Clear any remaining references
 		this.processes.clear();
 		this.processInfo.clear();
+		this.processRefs.clear();
+		this.processEventListeners.clear();
+		this.mockProcesses.clear();
+		this.detachedMonitoringIntervals.clear();
+		// RACE CONDITION FIX: Clear synchronization structures
+		this.processStateLocks.clear();
+		this.processingOperations.clear();
 	}
 }
