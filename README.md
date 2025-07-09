@@ -314,11 +314,6 @@ Don't hesitate to ask! We're here to help:
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Team Falkor** - For the amazing icon and inspiration
-- **Gaming Community** - For feedback and feature requests
-- **Open Source Contributors** - For making this project possible
 
 ## 📞 Support & Community
 
