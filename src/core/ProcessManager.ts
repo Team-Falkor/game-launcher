@@ -5,15 +5,16 @@ import {
 	spawn,
 } from "node:child_process";
 import * as sudo from "@expo/sudo-prompt";
-import type {
-	GameProcessInfo,
-	GameStatus,
-	ProcessManagerInterface,
-	ProcessManagerOptions,
-	ProcessStartOptions,
+import {
+	type GameProcessInfo,
+	type GameStatus,
+	type ProcessManagerInterface,
+	type ProcessManagerOptions,
+	type ProcessStartOptions,
+	SecurityEvent,
 } from "../@types";
 import { ProcessCache } from "../cache";
-import { getSecurityAuditLogger, SecurityEvent } from "../logging";
+import { getSecurityAuditLogger } from "../logging";
 import { EnvironmentProcessor } from "../utils/EnvironmentProcessor";
 import { getPlatform } from "../utils/platform";
 import {

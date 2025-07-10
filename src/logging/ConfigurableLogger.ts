@@ -1,14 +1,14 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { LoggingOptions } from "../@types/launcher";
 import type {
 	ILogger,
 	LogContext,
 	LogEntry,
 	LoggerConfig,
 	LogLevel,
-} from "./ILogger";
+} from "@/@types";
+import type { LoggingOptions } from "../@types/launcher";
 
 /**
  * Enhanced configurable logger with comprehensive output options

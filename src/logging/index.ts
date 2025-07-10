@@ -1,10 +1,8 @@
 import { resolve } from "node:path";
-import type { LoggerConfig, SecurityEvent } from "../@types/logging";
+import type { LoggerConfig, SecurityEvent } from "@/@types";
 import { Logger } from "./Logger";
 import { SecurityAuditLogger } from "./SecurityAuditLogger";
 
-// Export all types and classes
-export * from "./ILogger";
 export * from "./Logger";
 export * from "./SecurityAuditLogger";
 

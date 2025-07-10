@@ -7,7 +7,7 @@ import type {
 	LogEntry,
 	LoggerConfig,
 	LogLevel,
-} from "./ILogger";
+} from "@/@types";
 
 /**
  * Structured logger implementation with file rotation and console output

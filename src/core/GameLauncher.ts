@@ -4,12 +4,12 @@ import type {
 	GameLauncherOptions,
 	GameProcessEvents,
 	GameProcessInfo,
+	ILogger,
 	LaunchGameOptions,
 	LoggingOptions,
 } from "../@types";
 import { initializeLogging } from "../logging";
 import { ConfigurableLogger } from "../logging/ConfigurableLogger";
-import type { ILogger } from "../logging/ILogger";
 import { Logger } from "../logging/Logger";
 import { GameEventEmitter } from "./EventEmitter";
 import { ProcessManager } from "./ProcessManager";

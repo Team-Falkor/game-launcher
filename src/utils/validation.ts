@@ -1,7 +1,8 @@
 import { access, constants } from "node:fs/promises";
 import { platform } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
-import { getSecurityAuditLogger, SecurityEvent } from "../logging";
+import { SecurityEvent } from "@/@types";
+import { getSecurityAuditLogger } from "../logging";
 
 /**
  * Helper function to remove control characters without using regex ranges
