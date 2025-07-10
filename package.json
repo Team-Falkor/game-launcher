@@ -1,6 +1,6 @@
 {
 	"name": "@team-falkor/game-launcher",
-	"version": "0.2.5",
+	"version": "0.3.0",
 	"description": "Cross-platform Node.js utility package for managing game processes",
 	"license": "BSD-3-Clause",
 	"main": "dist/index.cjs",
