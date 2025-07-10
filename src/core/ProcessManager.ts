@@ -12,7 +12,9 @@ import type {
 	ProcessManagerOptions,
 	ProcessStartOptions,
 } from "../@types";
+import { ProcessCache } from "../cache";
 import { getSecurityAuditLogger, SecurityEvent } from "../logging";
+import { EnvironmentProcessor } from "../utils/EnvironmentProcessor";
 import { getPlatform } from "../utils/platform";
 import {
 	CommandSanitizer,
@@ -79,6 +81,10 @@ export class ProcessManager implements ProcessManagerInterface {
 	// RACE CONDITION FIX: Process state synchronization
 	private processStateLocks = new Map<string, Promise<void>>();
 	private processingOperations = new Set<string>();
+	// Environment processor for optimized environment handling
+	private environmentProcessor: EnvironmentProcessor;
+	// Process cache for intelligent caching of process data
+	private processCache: ProcessCache;
 
 	constructor(
 		eventEmitter: GameEventEmitter,
@@ -90,6 +96,25 @@ export class ProcessManager implements ProcessManagerInterface {
 			enableResourceMonitoring: true,
 			...options,
 		};
+
+		// Initialize environment processor with optimized settings
+		this.environmentProcessor = new EnvironmentProcessor({
+			enableCaching: true,
+			cacheTtl: 5 * 60 * 1000, // 5 minutes
+			maxCacheSize: 50, // Reasonable cache size for game launcher
+		});
+
+		// Initialize process cache with optimized settings for game launcher
+		this.processCache = new ProcessCache({
+			ttl: 10 * 60 * 1000, // 10 minutes for process info
+			statusCacheTtl: 5 * 1000, // 5 seconds for status (real-time)
+			metricsCacheTtl: 3 * 1000, // 3 seconds for metrics (real-time)
+			maxSize: 200, // Support many concurrent games
+			autoCleanup: true,
+			cleanupInterval: 30 * 1000, // 30 seconds cleanup
+			enableStatusCache: true,
+			enableMetricsCache: true,
+		});
 
 		// Use provided logger or fallback to security audit logger with wrapper
 		if (this.options.logger) {
@@ -177,21 +202,22 @@ export class ProcessManager implements ProcessManagerInterface {
 			}
 		}
 
-		// SECURITY: Sanitize environment variables
-		const cleanEnvironment: Record<string, string> = {};
-		Object.entries(process.env).forEach(([key, value]) => {
-			if (value !== undefined) {
-				cleanEnvironment[key] = value;
-			}
-		});
-
-		let combinedEnvironment = cleanEnvironment;
+		// SECURITY: Optimize environment variable processing with caching
+		let combinedEnvironment: Record<string, string>;
 		if (options.environment) {
-			// Merge and sanitize user-provided environment variables
+			// Validate and sanitize user-provided environment variables
 			const userEnvironment = SecurityValidator.validateEnvironment(
 				options.environment,
 			);
-			combinedEnvironment = { ...cleanEnvironment, ...userEnvironment };
+			// Use optimized environment processor with caching
+			combinedEnvironment = this.environmentProcessor.processEnvironment(
+				undefined, // Use cached process.env
+				userEnvironment,
+			).environment;
+		} else {
+			// Use cached base environment when no overrides
+			combinedEnvironment =
+				this.environmentProcessor.processEnvironment().environment;
 		}
 
 		const processInfo: GameProcessInfo = {
@@ -397,7 +423,24 @@ export class ProcessManager implements ProcessManagerInterface {
 	}
 
 	getProcessInfo(gameId: string): GameProcessInfo | null {
-		return this.processInfo.get(gameId) || null;
+		// Try to get from cache first for better performance
+		const cachedEntry = this.processCache.getProcessInfo(gameId);
+		if (cachedEntry) {
+			return cachedEntry.info;
+		}
+
+		// Fallback to in-memory map
+		const info = this.processInfo.get(gameId);
+		if (info) {
+			// Cache the result for future requests
+			this.processCache.cacheProcessInfo(gameId, {
+				info,
+				status: info.status,
+				metadata: info.metadata,
+			});
+		}
+
+		return info || null;
 	}
 
 	getAllProcesses(): Map<string, GameProcessInfo> {
@@ -407,6 +450,25 @@ export class ProcessManager implements ProcessManagerInterface {
 	isProcessRunning(gameId: string): boolean {
 		const info = this.processInfo.get(gameId);
 		return info?.status === "running" || info?.status === "detached";
+	}
+
+	/**
+	 * Get environment processor cache statistics for monitoring
+	 */
+	getEnvironmentCacheStats(): {
+		baseEnvironmentCached: boolean;
+		mergedEnvironmentCacheSize: number;
+		maxCacheSize: number;
+		cacheTtl: number;
+	} {
+		return this.environmentProcessor.getCacheStats();
+	}
+
+	/**
+	 * Clear environment processor caches manually
+	 */
+	clearEnvironmentCache(): void {
+		this.environmentProcessor.clearCache();
 	}
 
 	private async spawnWithAdmin(
@@ -886,6 +948,9 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		// Clean up process info
 		this.processInfo.delete(gameId);
+
+		// Clean up process cache entries
+		this.processCache.removeProcess(gameId);
 	}
 
 	private updateProcessStatus(gameId: string, status: GameStatus): void {
@@ -894,6 +959,18 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		const previousStatus = info.status;
 		info.status = status;
+
+		// Update cache with new status
+		this.processCache.updateProcessStatus(gameId, status);
+
+		// Update cached process info if it exists
+		if (this.processCache.hasProcessInfo(gameId)) {
+			this.processCache.cacheProcessInfo(gameId, {
+				info,
+				status,
+				metadata: info.metadata,
+			});
+		}
 
 		this.eventEmitter.emit("statusChange", {
 			gameId,
@@ -1195,13 +1272,14 @@ export class ProcessManager implements ProcessManagerInterface {
 	private batchCheckWindowsProcesses(
 		processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>,
 	): void {
-		// Group processes by type for efficient batch checking
+		// Enhanced grouping for better batch efficiency
 		const regularPids: number[] = [];
 		const adminProcesses = new Map<
 			string,
 			{ info: GameProcessInfo; process: ChildProcess }
 		>();
 		const pidToGameId = new Map<number, string>();
+		const executableGroups = new Map<string, string[]>();
 
 		processes.forEach(({ info, process }, gameId) => {
 			// RACE CONDITION FIX: Skip if operation is already in progress
@@ -1213,36 +1291,60 @@ export class ProcessManager implements ProcessManagerInterface {
 
 			if (isAdminProcess) {
 				adminProcesses.set(gameId, { info, process });
+				// Group admin processes by executable for batch checking
+				const executableName = info.executable.split(/[\\/]/).pop() || "";
+				if (!executableGroups.has(executableName)) {
+					executableGroups.set(executableName, []);
+				}
+				executableGroups.get(executableName)?.push(gameId);
 			} else if (process.pid) {
 				regularPids.push(process.pid);
 				pidToGameId.set(process.pid, gameId);
 			}
 		});
 
-		// Batch check regular processes
+		// Optimized batch check for regular processes with chunking
 		if (regularPids.length > 0) {
+			this.batchCheckRegularProcesses(regularPids, pidToGameId, processes);
+		}
+
+		// Optimized batch check for admin processes by executable
+		if (executableGroups.size > 0) {
+			this.batchCheckAdminProcesses(executableGroups, adminProcesses);
+		}
+	}
+
+	private batchCheckRegularProcesses(
+		pids: number[],
+		pidToGameId: Map<number, string>,
+		processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>,
+	): void {
+		// Process in chunks to avoid command line length limits
+		const chunkSize = 50;
+		for (let i = 0; i < pids.length; i += chunkSize) {
+			const chunk = pids.slice(i, i + chunkSize);
 			try {
-				const pidList = regularPids.join(",");
-				const result = execSync(
-					`tasklist /FI "PID eq ${pidList}" /FO CSV /NH`,
-					{
-						stdio: "pipe",
-						timeout: 2000,
-						encoding: "utf8",
-					},
-				);
+				// Use more efficient tasklist query
+				const pidFilter = chunk.map((pid) => `PID eq ${pid}`).join(" OR ");
+				const result = execSync(`tasklist /FI "${pidFilter}" /FO CSV /NH`, {
+					stdio: "pipe",
+					timeout: 3000,
+					encoding: "utf8",
+				});
 
 				const foundPids = new Set<number>();
-				const lines = result.split("\n").filter((line) => line.trim());
-				for (const line of lines) {
-					const match = line.match(/"[^"]*","(\d+)"/);
-					if (match?.[1]) {
-						foundPids.add(Number(match[1]));
+				if (!result.includes("INFO: No tasks are running")) {
+					const lines = result.split("\n").filter((line) => line.trim());
+					for (const line of lines) {
+						const match = line.match(/"[^"]*","(\d+)"/);
+						if (match?.[1]) {
+							foundPids.add(Number(match[1]));
+						}
 					}
 				}
 
 				// Check which processes are missing
-				regularPids.forEach((pid) => {
+				chunk.forEach((pid) => {
 					if (!foundPids.has(pid)) {
 						const gameId = pidToGameId.get(pid);
 						if (gameId) {
@@ -1251,8 +1353,8 @@ export class ProcessManager implements ProcessManagerInterface {
 					}
 				});
 			} catch {
-				// Fallback to individual checks
-				regularPids.forEach((pid) => {
+				// Fallback to individual signal checks for this chunk
+				chunk.forEach((pid) => {
 					const gameId = pidToGameId.get(pid);
 					if (gameId) {
 						try {
@@ -1267,43 +1369,73 @@ export class ProcessManager implements ProcessManagerInterface {
 				});
 			}
 		}
+	}
 
-		// Check admin processes individually (they require special handling)
-		adminProcesses.forEach(({ info, process }, gameId) => {
-			const hasRealPid = info.metadata?.hasRealPid === true;
+	private batchCheckAdminProcesses(
+		executableGroups: Map<string, string[]>,
+		adminProcesses: Map<
+			string,
+			{ info: GameProcessInfo; process: ChildProcess }
+		>,
+	): void {
+		// Batch check admin processes by executable name
+		executableGroups.forEach((gameIds, executableName) => {
 			try {
-				if (hasRealPid && process.pid) {
-					const result = execSync(`tasklist /FI "PID eq ${process.pid}" /NH`, {
+				const result = execSync(
+					`tasklist /FI "IMAGENAME eq ${executableName}" /FO CSV /NH`,
+					{
 						stdio: "pipe",
-						timeout: 1000,
+						timeout: 2000,
 						encoding: "utf8",
+					},
+				);
+
+				const isRunning =
+					!result.includes("INFO: No tasks are running") &&
+					result.trim() !== "";
+
+				if (!isRunning) {
+					// All processes with this executable have exited
+					gameIds.forEach((gameId) => {
+						this.handleProcessExit(gameId, 0, null);
 					});
-					if (
-						result.includes("INFO: No tasks are running") ||
-						result.trim() === ""
-					) {
-						this.handleProcessExit(gameId, 0, null);
-					}
 				} else {
-					// Admin process with mock PID - check by executable name
-					const executableName = info.executable.split(/[\\/]/).pop() || "";
-					const result = execSync(
-						`tasklist /FI "IMAGENAME eq ${executableName}" /NH`,
-						{
-							stdio: "pipe",
-							timeout: 1000,
-							encoding: "utf8",
-						},
-					);
-					if (
-						result.includes("INFO: No tasks are running") ||
-						result.trim() === ""
-					) {
-						this.handleProcessExit(gameId, 0, null);
-					}
+					// For running processes, check individual PIDs if available
+					gameIds.forEach((gameId) => {
+						const processData = adminProcesses.get(gameId);
+						if (processData) {
+							const { info, process } = processData;
+							const hasRealPid = info.metadata?.hasRealPid === true;
+
+							if (hasRealPid && process.pid) {
+								// Individual PID check for processes with real PIDs
+								try {
+									const pidResult = execSync(
+										`tasklist /FI "PID eq ${process.pid}" /NH`,
+										{
+											stdio: "pipe",
+											timeout: 1000,
+											encoding: "utf8",
+										},
+									);
+									if (
+										pidResult.includes("INFO: No tasks are running") ||
+										pidResult.trim() === ""
+									) {
+										this.handleProcessExit(gameId, 0, null);
+									}
+								} catch {
+									this.handleProcessExit(gameId, 0, null);
+								}
+							}
+						}
+					});
 				}
 			} catch {
-				this.handleProcessExit(gameId, 0, null);
+				// Fallback: mark all processes with this executable as exited
+				gameIds.forEach((gameId) => {
+					this.handleProcessExit(gameId, 0, null);
+				});
 			}
 		});
 	}
@@ -1311,29 +1443,171 @@ export class ProcessManager implements ProcessManagerInterface {
 	private batchCheckUnixProcesses(
 		processes: Map<string, { info: GameProcessInfo; process: ChildProcess }>,
 	): void {
+		// Group processes for efficient batch checking
+		const regularPids: number[] = [];
+		const adminProcesses: string[] = [];
+		const pidToGameId = new Map<number, string>();
+		const gameIdToProcess = new Map<
+			string,
+			{ info: GameProcessInfo; process: ChildProcess }
+		>();
+
 		processes.forEach(({ info, process }, gameId) => {
 			// RACE CONDITION FIX: Skip if operation is already in progress
 			if (this.isProcessOperationInProgress(gameId)) {
 				return;
 			}
 
-			try {
-				const isAdminProcess = info.metadata?.runAsAdmin === true;
-				const hasRealPid = isAdminProcess && info.metadata?.hasRealPid === true;
+			gameIdToProcess.set(gameId, { info, process });
 
-				if (process.killed) {
-					this.handleProcessExit(gameId, null, null);
-				} else if (process.pid && (!isAdminProcess || hasRealPid)) {
-					try {
+			const isAdminProcess = info.metadata?.runAsAdmin === true;
+			const hasRealPid = isAdminProcess && info.metadata?.hasRealPid === true;
+
+			if (process.killed) {
+				this.handleProcessExit(gameId, null, null);
+				return;
+			}
+
+			if (process.pid && (!isAdminProcess || hasRealPid)) {
+				regularPids.push(process.pid);
+				pidToGameId.set(process.pid, gameId);
+			} else if (isAdminProcess) {
+				adminProcesses.push(gameId);
+			}
+		});
+
+		// Batch check regular processes using ps command
+		if (regularPids.length > 0) {
+			this.batchCheckUnixRegularProcesses(regularPids, pidToGameId);
+		}
+
+		// Check admin processes individually (they require special handling)
+		adminProcesses.forEach((gameId) => {
+			const processData = gameIdToProcess.get(gameId);
+			if (processData) {
+				const { process } = processData;
+				try {
+					if (process.pid) {
 						process.kill(0);
+					}
+				} catch {
+					this.handleProcessExit(gameId, null, null);
+				}
+			}
+		});
+	}
+
+	private batchCheckUnixRegularProcesses(
+		pids: number[],
+		pidToGameId: Map<number, string>,
+	): void {
+		try {
+			// Use ps command to check multiple PIDs at once
+			const pidList = pids.join(",");
+			const result = execSync(`ps -p ${pidList} -o pid=`, {
+				stdio: "pipe",
+				timeout: 2000,
+				encoding: "utf8",
+			});
+
+			const foundPids = new Set<number>();
+			const lines = result.split("\n").filter((line) => line.trim());
+			for (const line of lines) {
+				const pid = parseInt(line.trim());
+				if (!Number.isNaN(pid)) {
+					foundPids.add(pid);
+				}
+			}
+
+			// Check which processes are missing
+			pids.forEach((pid) => {
+				if (!foundPids.has(pid)) {
+					const gameId = pidToGameId.get(pid);
+					if (gameId) {
+						this.handleProcessExit(gameId, null, null);
+					}
+				}
+			});
+		} catch {
+			// Fallback to individual signal checks
+			pids.forEach((pid) => {
+				const gameId = pidToGameId.get(pid);
+				if (gameId) {
+					try {
+						process.kill(pid, 0);
 					} catch {
 						this.handleProcessExit(gameId, null, null);
 					}
 				}
-			} catch {
-				// Error checking Unix process - process likely terminated
-			}
-		});
+			});
+		}
+	}
+
+	/**
+	 * Get cache statistics for monitoring and debugging
+	 * @returns Combined cache statistics from all cache instances
+	 */
+	getCacheStats(): {
+		processCache: ReturnType<ProcessCache["getCacheStats"]>;
+		environmentCache: ReturnType<EnvironmentProcessor["getCacheStats"]>;
+	} {
+		return {
+			processCache: this.processCache.getCacheStats(),
+			environmentCache: this.environmentProcessor.getCacheStats(),
+		};
+	}
+
+	/**
+	 * Clear all process caches manually
+	 * Useful for testing or when memory usage needs to be reduced
+	 */
+	clearProcessCache(): void {
+		this.processCache.clearAll();
+	}
+
+	/**
+	 * Clear all caches (process and environment)
+	 */
+	clearAllCaches(): void {
+		this.clearProcessCache();
+		this.clearEnvironmentCache();
+	}
+
+	/**
+	 * Get process cache entry for a specific game
+	 * @param gameId Game identifier
+	 * @returns Cached process entry or undefined
+	 */
+	getCachedProcessInfo(
+		gameId: string,
+	): ReturnType<ProcessCache["getProcessInfo"]> {
+		return this.processCache.getProcessInfo(gameId);
+	}
+
+	/**
+	 * Check if a process is cached
+	 * @param gameId Game identifier
+	 * @returns True if process info is cached
+	 */
+	isProcessCached(gameId: string): boolean {
+		return this.processCache.hasProcessInfo(gameId);
+	}
+
+	/**
+	 * Update process metrics in cache
+	 * @param gameId Game identifier
+	 * @param metrics Performance metrics to cache
+	 */
+	updateProcessMetrics(
+		gameId: string,
+		metrics: {
+			launchTime?: number;
+			memoryUsage?: number;
+			cpuUsage?: number;
+			lastActivity?: Date;
+		},
+	): void {
+		this.processCache.cacheProcessMetrics(gameId, metrics);
 	}
 
 	destroy(): void {
@@ -1356,6 +1630,12 @@ export class ProcessManager implements ProcessManagerInterface {
 		// MEMORY LEAK FIX: Comprehensive cleanup of all resources
 		const allGameIds = Array.from(this.processes.keys());
 		allGameIds.forEach((gameId) => this.cleanupProcessResources(gameId));
+
+		// Clear environment processor caches
+		this.environmentProcessor.clearCache();
+
+		// Clear process cache
+		this.processCache.destroy();
 
 		// Clear any remaining references
 		this.processes.clear();
