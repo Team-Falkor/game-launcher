@@ -2,6 +2,17 @@ import type { GameProcessEvents } from "./events";
 import type { LogContext, LogEntry, LoggerConfig } from "./logging";
 import type { GameProcessInfo } from "./process";
 
+// Forward declaration for Game class to avoid circular dependency
+export interface Game {
+	readonly id: string;
+	on<K extends keyof GameProcessEvents>(event: K, listener: GameProcessEvents[K]): Game;
+	off<K extends keyof GameProcessEvents>(event: K, listener: GameProcessEvents[K]): Game;
+	removeAllListeners(): Game;
+	isRunning(): boolean;
+	getInfo(): GameProcessInfo | null;
+	close(force?: boolean): Promise<boolean>;
+}
+
 export interface GameLauncherOptions {
 	/** Maximum number of concurrent games */
 	maxConcurrentGames?: number | undefined;
@@ -172,7 +183,7 @@ export interface LaunchGameOptions {
 }
 
 export interface GameLauncherInterface {
-	launchGame(options: LaunchGameOptions): Promise<string>;
+	launchGame(options: LaunchGameOptions): Promise<Game>;
 	closeGame(gameId: string, force?: boolean): Promise<boolean>;
 	isGameRunning(gameId: string): boolean;
 	getRunningGames(): string[];

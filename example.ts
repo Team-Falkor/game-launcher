@@ -2,8 +2,8 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { GameLauncher } from "./src/index";
 
-// Example demonstrating the new runAsAdmin feature
-async function demonstrateAdminLaunch() {
+// Example demonstrating the new Game class feature
+async function demonstrateGameClassLaunch() {
 	const launcher = new GameLauncher({
 		maxConcurrentGames: 5,
 		enableProcessMonitoring: true,
@@ -12,19 +12,19 @@ async function demonstrateAdminLaunch() {
     }
   });
 
-	// Set up event listeners
+	// Set up global event listeners (still works as before)
 	launcher.on("launched", (event) => {
-		console.log(`Game launched: ${event.gameId} (PID: ${event.pid})`);
+		console.log(`[Global] Game launched: ${event.gameId} (PID: ${event.pid})`);
 	});
 
 	launcher.on("error", (event) => {
-		console.error(`Error in ${event.phase}: ${event.error.message}`);
+		console.error(`[Global] Error in ${event.phase}: ${event.error.message}`);
 	});
 
 	try {
-		// Example 1: Regular game launch
+		// Example 1: Regular game launch - now returns a Game instance!
 		console.log("Launching regular game...");
-		const regularGameId = await launcher.launchGame({
+		const regularGame = await launcher.launchGame({
 			gameId: "notepad-regular",
 			executable: "C:\\Windows\\System32\\notepad.exe",
 			args: [],
@@ -34,9 +34,22 @@ async function demonstrateAdminLaunch() {
 			},
 		});
 
+		// Set up game-specific event listeners
+		regularGame.on("launched", (event) => {
+			console.log(`[${regularGame.id}] Game launched: PID ${event.pid}`);
+		});
+
+		regularGame.on("closed", (event) => {
+			console.log(`[${regularGame.id}] Game closed with exit code: ${event.exitCode}`);
+		});
+
+		regularGame.on("error", (event) => {
+			console.error(`[${regularGame.id}] Game error: ${event.error.message}`);
+		});
+
 		// Example 2: Admin game launch
 		console.log("Launching game with admin privileges...");
-		const adminGameId = await launcher.launchGame({
+		const adminGame = await launcher.launchGame({
 			gameId: "notepad-admin",
 			executable: "C:\\Windows\\System32\\notepad.exe",
 			args: [],
@@ -48,31 +61,52 @@ async function demonstrateAdminLaunch() {
 			},
 		});
 
-		console.log("Both games launched successfully!");
-		console.log(`Regular game ID: ${regularGameId}`);
-		console.log(`Admin game ID: ${adminGameId}`);
-
-		// Check running games
-		const runningGames = launcher.getRunningGames();
-		console.log(`Currently running games: ${runningGames.length}`);
-
-		// Get detailed info for each game
-		runningGames.forEach((gameId) => {
-			const info = launcher.getGameInfo(gameId);
-			if (info) {
-				console.log(`Game ${gameId}:`, {
-					pid: info.pid,
-					status: info.status,
-					metadata: info.metadata,
-				});
-			}
+		// Set up different event listeners for the admin game
+		adminGame.on("launched", (event) => {
+			console.log(`[${adminGame.id}] Admin game launched: PID ${event.pid}`);
 		});
 
-		// Wait a bit then close games
+		adminGame.on("output", (event) => {
+			console.log(`[${adminGame.id}] Output (${event.type}): ${event.data.trim()}`);
+		});
+
+		adminGame.on("statusChange", (event) => {
+			console.log(`[${adminGame.id}] Status: ${event.previousStatus} → ${event.currentStatus}`);
+		});
+
+		console.log("Both games launched successfully!");
+		console.log(`Regular game ID: ${regularGame.id}`);
+		console.log(`Admin game ID: ${adminGame.id}`);
+
+		// Check running games using the Game instances
+		console.log(`Regular game running: ${regularGame.isRunning()}`);
+		console.log(`Admin game running: ${adminGame.isRunning()}`);
+
+		// Get detailed info for each game using the Game instances
+		const regularInfo = regularGame.getInfo();
+		const adminInfo = adminGame.getInfo();
+
+		if (regularInfo) {
+			console.log(`Regular game info:`, {
+				pid: regularInfo.pid,
+				status: regularInfo.status,
+				metadata: regularInfo.metadata,
+			});
+		}
+
+		if (adminInfo) {
+			console.log(`Admin game info:`, {
+				pid: adminInfo.pid,
+				status: adminInfo.status,
+				metadata: adminInfo.metadata,
+			});
+		}
+
+		// Wait a bit then close games using the Game instances
 		setTimeout(async () => {
 			console.log("Closing games...");
-			await launcher.closeGame(regularGameId);
-			await launcher.closeGame(adminGameId);
+			await regularGame.close();
+			await adminGame.close();
 			launcher.destroy();
 		}, 5000);
 	} catch (error) {
@@ -83,7 +117,7 @@ async function demonstrateAdminLaunch() {
 
 // Run the demonstration
 if (import.meta.main) {
-	demonstrateAdminLaunch().catch(console.error);
+	demonstrateGameClassLaunch().catch(console.error);
 }
 
 import { getPlatform } from "./src/utils/platform";
@@ -297,7 +331,7 @@ async function runExample() {
 			console.log(`   Using executable: ${testApp.executable}`);
 			console.log(`   With args: ${testApp.args.join(" ")}`);
 
-			await launcher.launchGame({
+			const testGame = await launcher.launchGame({
 				gameId: "test-game-1",
 				executable: testApp.executable,
 				args: testApp.args,
@@ -307,6 +341,19 @@ async function runExample() {
 					version: "1.0.0",
 					type: "system-command",
 				},
+			});
+
+			// Set up game-specific event listeners for the test game
+			testGame.on("launched", (event) => {
+				console.log(`[${testGame.id}] Test game launched successfully!`);
+			});
+
+			testGame.on("output", (event) => {
+				console.log(`[${testGame.id}] ${event.type}: ${event.data.trim()}`);
+			});
+
+			testGame.on("closed", (event) => {
+				console.log(`[${testGame.id}] Test game finished with exit code: ${event.exitCode}`);
 			});
 
 			// Wait for the game to close naturally

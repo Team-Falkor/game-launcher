@@ -12,6 +12,7 @@ import { initializeLogging } from "../logging";
 import { ConfigurableLogger } from "../logging/ConfigurableLogger";
 import { Logger } from "../logging/Logger";
 import { GameEventEmitter } from "./EventEmitter";
+import { Game } from "./Game";
 import { ProcessManager } from "./ProcessManager";
 
 export class GameLauncher implements GameLauncherInterface {
@@ -154,7 +155,7 @@ export class GameLauncher implements GameLauncherInterface {
 		this.updateLoggingConfig({ enabled });
 	}
 
-	async launchGame(options: LaunchGameOptions): Promise<string> {
+	async launchGame(options: LaunchGameOptions): Promise<Game> {
 		const {
 			gameId,
 			executable,
@@ -202,7 +203,7 @@ export class GameLauncher implements GameLauncherInterface {
 			args,
 			processOptions,
 		);
-		return gameId;
+		return new Game(gameId, this.eventEmitter, this.processManager);
 	}
 
 	async closeGame(gameId: string, force = false): Promise<boolean> {
