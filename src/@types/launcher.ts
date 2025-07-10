@@ -1,5 +1,5 @@
-import type { LogContext, LogEntry, LoggerConfig } from "../logging/ILogger";
 import type { GameProcessEvents } from "./events";
+import type { LogContext, LogEntry, LoggerConfig } from "./logging";
 import type { GameProcessInfo } from "./process";
 
 export interface GameLauncherOptions {

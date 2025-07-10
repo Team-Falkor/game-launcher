@@ -3,22 +3,30 @@
  * Provides intelligent caching capabilities with TTL, LRU eviction, and specialized process caching
  */
 
+import type {
+	CacheOptions,
+	DestroyableCache,
+	ProcessCacheOptions,
+	StatsCache,
+} from "../@types";
 import { CacheManager } from "./CacheManager";
 import { ProcessCache } from "./ProcessCache";
 
-// Re-export default exports for convenience
+// Re-export types from @types
+export type {
+	CacheEntry,
+	CacheOptions,
+	ProcessCacheEntry,
+	ProcessCacheOptions,
+} from "../@types";
+// Re-export classes and default exports for convenience
 export {
-	type CacheEntry,
 	CacheManager,
-	type CacheOptions,
-	type CacheStats,
 	default as DefaultCacheManager,
 } from "./CacheManager";
 export {
 	default as DefaultProcessCache,
 	ProcessCache,
-	type ProcessCacheEntry,
-	type ProcessCacheOptions,
 } from "./ProcessCache";
 
 /**
@@ -31,8 +39,8 @@ export namespace CacheFactory {
 	 * @returns Configured CacheManager instance
 	 */
 	export function createCacheManager<T = unknown>(
-		options?: import("./CacheManager").CacheOptions,
-	): import("./CacheManager").CacheManager<T> {
+		options?: CacheOptions,
+	): CacheManager<T> {
 		return new CacheManager<T>(options);
 	}
 
@@ -42,8 +50,8 @@ export namespace CacheFactory {
 	 * @returns Configured ProcessCache instance
 	 */
 	export function createProcessCache(
-		options?: import("./ProcessCache").ProcessCacheOptions,
-	): import("./ProcessCache").ProcessCache {
+		options?: ProcessCacheOptions,
+	): ProcessCache {
 		return new ProcessCache(options);
 	}
 
@@ -54,7 +62,7 @@ export namespace CacheFactory {
 	 */
 	export function createHighPerformanceCache<T = unknown>(
 		maxSize = 2000,
-	): import("./CacheManager").CacheManager<T> {
+	): CacheManager<T> {
 		return new CacheManager<T>({
 			ttl: 10 * 60 * 1000, // 10 minutes
 			maxSize,
@@ -70,7 +78,7 @@ export namespace CacheFactory {
 	 */
 	export function createShortLivedCache<T = unknown>(
 		ttl = 30 * 1000,
-	): import("./CacheManager").CacheManager<T> {
+	): CacheManager<T> {
 		return new CacheManager<T>({
 			ttl,
 			maxSize: 500,
@@ -86,7 +94,7 @@ export namespace CacheFactory {
 	 */
 	export function createMemoryEfficientCache<T = unknown>(
 		maxSize = 100,
-	): import("./CacheManager").CacheManager<T> {
+	): CacheManager<T> {
 		return new CacheManager<T>({
 			ttl: 2 * 60 * 1000, // 2 minutes
 			maxSize,
@@ -99,7 +107,7 @@ export namespace CacheFactory {
 	 * Create a process cache optimized for real-time monitoring
 	 * @returns Real-time optimized ProcessCache instance
 	 */
-	export function createRealTimeProcessCache(): import("./ProcessCache").ProcessCache {
+	export function createRealTimeProcessCache(): ProcessCache {
 		return new ProcessCache({
 			ttl: 2 * 60 * 1000, // 2 minutes for general data
 			statusCacheTtl: 5 * 1000, // 5 seconds for status
@@ -111,21 +119,6 @@ export namespace CacheFactory {
 			enableMetricsCache: true,
 		});
 	}
-}
-
-/**
- * Interface for cache instances with destroy method
- */
-interface DestroyableCache {
-	destroy(): void;
-}
-
-/**
- * Interface for cache instances with stats methods
- */
-interface StatsCache {
-	getStats?(): unknown;
-	getCacheStats?(): unknown;
 }
 
 /**

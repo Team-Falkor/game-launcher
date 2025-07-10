@@ -1,4 +1,6 @@
-export type Platform = "win32" | "darwin" | "linux" | "other";
+import type { Platform } from "../@types/utils";
+
+export type { Platform };
 
 // Cache platform detection for better performance
 let cachedPlatform: Platform | null = null;

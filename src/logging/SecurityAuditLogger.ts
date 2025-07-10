@@ -1,27 +1,8 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { LoggerConfig, SecurityAuditEntry } from "./ILogger";
-
-/**
- * Security audit events enumeration
- */
-export enum SecurityEvent {
-	EXECUTABLE_VALIDATION = "executable_validation",
-	PATH_SANITIZATION = "path_sanitization",
-	ARGUMENT_SANITIZATION = "argument_sanitization",
-	ENVIRONMENT_VALIDATION = "environment_validation",
-	COMMAND_VALIDATION = "command_validation",
-	PATH_TRAVERSAL_ATTEMPT = "path_traversal_attempt",
-	INJECTION_ATTEMPT = "injection_attempt",
-	PRIVILEGE_ESCALATION = "privilege_escalation",
-	DANGEROUS_ENVIRONMENT_BLOCKED = "dangerous_environment_blocked",
-	PROCESS_LAUNCH = "process_launch",
-	PROCESS_TERMINATION = "process_termination",
-	ADMIN_EXECUTION = "admin_execution",
-	PATH_VALIDATION = "path_validation",
-	PATH_TRAVERSAL = "path_traversal",
-}
+import type { LoggerConfig, SecurityAuditEntry } from "../@types/logging";
+import { SecurityEvent } from "../@types/logging";
 
 /**
  * Security audit logger for tracking security-relevant events

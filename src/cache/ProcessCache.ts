@@ -3,37 +3,12 @@
  * Provides specialized caching for process information, status, and metadata
  */
 
-import type { GameProcessInfo, GameStatus } from "../@types";
-import { CacheManager, type CacheOptions } from "./CacheManager";
-
-export interface ProcessCacheEntry {
-	/** Process information */
-	info: GameProcessInfo;
-	/** Last known status */
-	status: GameStatus;
-	/** Process metadata */
-	metadata?: Record<string, unknown>;
-	/** Performance metrics */
-	metrics?: {
-		/** Launch time in milliseconds */
-		launchTime?: number;
-		/** Memory usage in bytes */
-		memoryUsage?: number;
-		/** CPU usage percentage */
-		cpuUsage?: number;
-	};
-}
-
-export interface ProcessCacheOptions extends CacheOptions {
-	/** Enable process status caching (default: true) */
-	enableStatusCache?: boolean;
-	/** Enable process metrics caching (default: true) */
-	enableMetricsCache?: boolean;
-	/** Status cache TTL in milliseconds (default: 30 seconds) */
-	statusCacheTtl?: number;
-	/** Metrics cache TTL in milliseconds (default: 10 seconds) */
-	metricsCacheTtl?: number;
-}
+import type {
+	GameStatus,
+	ProcessCacheEntry,
+	ProcessCacheOptions,
+} from "../@types";
+import { CacheManager } from "./CacheManager";
 
 /**
  * Specialized cache manager for process-related data

@@ -3,46 +3,7 @@
  * Provides flexible caching with TTL, LRU eviction, and type safety
  */
 
-export interface CacheOptions {
-	/** Time to live in milliseconds (default: 5 minutes) */
-	ttl?: number;
-	/** Maximum cache size (default: 1000) */
-	maxSize?: number;
-	/** Enable automatic cleanup of expired entries (default: true) */
-	autoCleanup?: boolean;
-	/** Cleanup interval in milliseconds (default: 1 minute) */
-	cleanupInterval?: number;
-}
-
-export interface CacheEntry<T> {
-	/** The cached value */
-	value: T;
-	/** Timestamp when the entry was created */
-	createdAt: number;
-	/** Timestamp when the entry expires */
-	expiresAt: number;
-	/** Last access timestamp for LRU eviction */
-	lastAccessed: number;
-	/** Access count for statistics */
-	accessCount: number;
-}
-
-export interface CacheStats {
-	/** Current number of entries */
-	size: number;
-	/** Maximum cache size */
-	maxSize: number;
-	/** Total cache hits */
-	hits: number;
-	/** Total cache misses */
-	misses: number;
-	/** Hit ratio (0-1) */
-	hitRatio: number;
-	/** Number of expired entries cleaned up */
-	expiredCleanups: number;
-	/** Number of LRU evictions */
-	lruEvictions: number;
-}
+import type { CacheEntry, CacheOptions, CacheStats } from "../@types";
 
 /**
  * Intelligent cache manager with TTL, LRU eviction, and automatic cleanup

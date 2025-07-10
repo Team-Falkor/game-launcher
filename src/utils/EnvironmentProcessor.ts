@@ -3,23 +3,10 @@
  * Provides efficient environment merging and caching capabilities
  */
 
-export interface EnvironmentProcessorOptions {
-	/** Enable caching of base environment (default: true) */
-	enableCaching?: boolean;
-	/** Cache TTL in milliseconds (default: 5 minutes) */
-	cacheTtl?: number;
-	/** Maximum cache size (default: 100) */
-	maxCacheSize?: number;
-}
-
-export interface ProcessedEnvironment {
-	/** The final merged environment */
-	environment: Record<string, string>;
-	/** Whether the result was served from cache */
-	fromCache: boolean;
-	/** Processing time in milliseconds */
-	processingTime: number;
-}
+import type {
+	EnvironmentProcessorOptions,
+	ProcessedEnvironment,
+} from "../@types/utils";
 
 /**
  * Optimized environment variable processor with caching and validation
