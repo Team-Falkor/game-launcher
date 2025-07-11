@@ -581,9 +581,26 @@ export class ProcessManager implements ProcessManagerInterface {
 			const launchTime = Date.now();
 			const executableName = executable.split(/[\\/]/).pop() || "";
 
-			sudo.exec(fullCommand, sudoOptions, async (error, stdout, stderr) => {
+			// Create mock process immediately to resolve the promise
+			// This allows the launched event to be emitted right away
+			const mockProcess = this.createMockChildProcess(
+				"", // stdout - will be empty initially
+				"", // stderr - will be empty initially
+				captureOutput,
+				undefined, // actualPid - will be found later
+				gameId,
+			);
+
+			// Resolve immediately with the mock process
+			resolve(mockProcess);
+
+			// Start the actual admin process in the background
+			sudo.exec(fullCommand, sudoOptions, async (error) => {
 				if (error) {
-					reject(error);
+					// If there's an error, emit it through the mock process
+					setImmediate(() => {
+						mockProcess.emit("error", error);
+					});
 					return;
 				}
 
@@ -593,27 +610,19 @@ export class ProcessManager implements ProcessManagerInterface {
 					launchTime,
 				);
 
-				// Create a mock ChildProcess-like object for admin processes
-				// Since sudo-prompt doesn't return a ChildProcess, we need to simulate one
-				const stdoutStr = stdout
-					? typeof stdout === "string"
-						? stdout
-						: stdout.toString()
-					: "";
-				const stderrStr = stderr
-					? typeof stderr === "string"
-						? stderr
-						: stderr.toString()
-					: "";
-				const mockProcess = this.createMockChildProcess(
-					stdoutStr,
-					stderrStr,
-					captureOutput,
-					actualPid,
-					gameId,
-				);
+				// Update the mock process with the actual PID if found
+				if (actualPid && mockProcess) {
+					(mockProcess as ExtendedChildProcess).actualPid = actualPid;
 
-				resolve(mockProcess);
+					// Start monitoring the actual process for exit
+					if (gameId) {
+						this.startElevatedProcessMonitoring(gameId, actualPid, mockProcess);
+					}
+				}
+
+				// For admin processes, sudo.exec completing means the process started successfully
+				// We don't emit exit here because the process is now running independently
+				// Exit events will be handled by the process monitoring if we found the actual PID
 			});
 		});
 	}
@@ -771,6 +780,109 @@ export class ProcessManager implements ProcessManagerInterface {
 		});
 
 		return mockProcess;
+	}
+
+	private startElevatedProcessMonitoring(
+		gameId: string,
+		actualPid: number,
+		mockProcess: ChildProcess,
+	): void {
+		// Wait a bit before starting monitoring to give the process time to start
+		setTimeout(() => {
+			let processFoundOnce = false;
+			let consecutiveNotFoundCount = 0;
+			const MAX_NOT_FOUND_COUNT = 3; // Allow 3 consecutive "not found" before considering it dead
+
+			console.log(`[DEBUG] Starting monitoring for PID ${actualPid}`);
+
+			// Monitor the actual elevated process for exit
+			const monitorInterval = setInterval(() => {
+				try {
+					let processExists = false;
+
+					if (getPlatform() === "win32") {
+						// Check if process is still running on Windows
+						try {
+							const result = execSync(
+								`tasklist /FI "PID eq ${actualPid}" /FO CSV /NH`,
+								{
+									stdio: "pipe",
+									encoding: "utf8",
+								},
+							);
+							console.log(
+								`[DEBUG] Tasklist result for PID ${actualPid}:`,
+								result.trim(),
+							);
+							// If the result contains the PID, the process exists
+							processExists = result.includes(`"${actualPid}"`);
+						} catch (error) {
+							console.log(
+								`[DEBUG] Tasklist error for PID ${actualPid}:`,
+								error,
+							);
+							processExists = false;
+						}
+					} else {
+						// Check if process is still running on Unix-like systems
+						try {
+							process.kill(actualPid, 0); // Signal 0 checks if process exists
+							processExists = true;
+						} catch {
+							processExists = false;
+						}
+					}
+
+					console.log(
+						`[DEBUG] PID ${actualPid} exists: ${processExists}, foundOnce: ${processFoundOnce}, notFoundCount: ${consecutiveNotFoundCount}`,
+					);
+
+					if (processExists) {
+						processFoundOnce = true;
+						consecutiveNotFoundCount = 0;
+					} else {
+						consecutiveNotFoundCount++;
+
+						// Only consider the process dead if:
+						// 1. We found it at least once before (it was running)
+						// 2. We haven't found it for several consecutive checks
+						if (
+							processFoundOnce &&
+							consecutiveNotFoundCount >= MAX_NOT_FOUND_COUNT
+						) {
+							console.log(
+								`[DEBUG] Process ${actualPid} considered dead, emitting exit`,
+							);
+							clearInterval(monitorInterval);
+							this.detachedMonitoringIntervals.delete(gameId);
+							setImmediate(() => {
+								mockProcess.emit("exit", 0, null);
+							});
+						}
+					}
+				} catch (error) {
+					// Error checking process status
+					console.log(`[DEBUG] Error checking process ${actualPid}:`, error);
+					consecutiveNotFoundCount++;
+					if (
+						processFoundOnce &&
+						consecutiveNotFoundCount >= MAX_NOT_FOUND_COUNT
+					) {
+						console.log(
+							`[DEBUG] Process ${actualPid} considered dead due to error, emitting exit`,
+						);
+						clearInterval(monitorInterval);
+						this.detachedMonitoringIntervals.delete(gameId);
+						setImmediate(() => {
+							mockProcess.emit("exit", 1, null);
+						});
+					}
+				}
+			}, 2000); // Check every 2 seconds
+
+			// Store the interval for cleanup
+			this.detachedMonitoringIntervals.set(gameId, monitorInterval);
+		}, 3000); // Wait 3 seconds before starting monitoring
 	}
 
 	private setupProcessHandlers(gameId: string, process: ChildProcess): void {
