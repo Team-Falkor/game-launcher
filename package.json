@@ -1,6 +1,6 @@
 {
 	"name": "@team-falkor/game-launcher",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"description": "Cross-platform Node.js utility package for managing game processes",
 	"license": "BSD-3-Clause",
 	"main": "dist/index.js",
@@ -10,7 +10,7 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
-      "require": "./dist/index.js",
+			"require": "./dist/index.js",
 			"default": "./dist/index.js"
 		}
 	},
@@ -52,9 +52,9 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.6",
 		"@types/bun": "latest",
+		"rimraf": "^5.0.10",
 		"tsdown": "^0.12.9",
-		"typescript": "^5.0.0",
-		"rimraf": "^5.0.10"
+		"typescript": "^5.0.0"
 	},
 	"peerDependencies": {
 		"typescript": "^5"
