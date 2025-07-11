@@ -19,6 +19,10 @@ export interface GameProcessInfo {
 export interface ProcessManagerOptions {
 	monitoringInterval?: number | undefined;
 	enableResourceMonitoring?: boolean | undefined;
+	/** Maximum number of failed process checks before marking as exited (default: 5) */
+	maxRetries?: number | undefined;
+	/** Interval in milliseconds to reset retry counters for successful checks (default: 30000) */
+	retryResetInterval?: number | undefined;
 	logger?:
 		| {
 				logSecurityEvent?: (

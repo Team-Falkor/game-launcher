@@ -86,6 +86,12 @@ export class ProcessManager implements ProcessManagerInterface {
 	private environmentProcessor: EnvironmentProcessor;
 	// Process cache for intelligent caching of process data
 	private processCache: ProcessCache;
+	// Retry mechanism for process monitoring to handle slow launches (especially admin processes)
+	private processRetryCounters = new Map<string, number>();
+	private processLastSeenTimes = new Map<string, number>();
+	private readonly maxRetries: number;
+	private readonly retryResetInterval: number;
+	private retryResetTimer?: NodeJS.Timeout | undefined;
 
 	constructor(
 		eventEmitter: GameEventEmitter,
@@ -95,8 +101,14 @@ export class ProcessManager implements ProcessManagerInterface {
 		this.options = {
 			monitoringInterval: 1000,
 			enableResourceMonitoring: true,
+			maxRetries: 5,
+			retryResetInterval: 30000,
 			...options,
 		};
+
+		// Initialize retry configuration
+		this.maxRetries = this.options.maxRetries || 5;
+		this.retryResetInterval = this.options.retryResetInterval || 30000;
 
 		// Initialize environment processor with optimized settings
 		this.environmentProcessor = new EnvironmentProcessor({
@@ -152,6 +164,9 @@ export class ProcessManager implements ProcessManagerInterface {
 		if (this.options.enableResourceMonitoring) {
 			this.startMonitoring();
 		}
+
+		// Start retry reset timer
+		this.startRetryResetTimer();
 	}
 
 	async startProcess(
@@ -581,27 +596,34 @@ export class ProcessManager implements ProcessManagerInterface {
 			const launchTime = Date.now();
 			const executableName = executable.split(/[\\/]/).pop() || "";
 
-			// Create mock process immediately to resolve the promise
-			// This allows the launched event to be emitted right away
+			// Create the mock process immediately to allow "launched" event emission
+			// We'll update it with actual PID later when available
 			const mockProcess = this.createMockChildProcess(
-				"", // stdout - will be empty initially
-				"", // stderr - will be empty initially
+				"", // stdout will be captured later
+				"", // stderr will be captured later
 				captureOutput,
-				undefined, // actualPid - will be found later
+				undefined, // actualPid will be found later
 				gameId,
 			);
 
-			// Resolve immediately with the mock process
+			// Resolve immediately to allow the "launched" event to fire
 			resolve(mockProcess);
 
-			// Start the actual admin process in the background
-			sudo.exec(fullCommand, sudoOptions, async (error) => {
+			// Execute the command asynchronously and handle completion separately
+			sudo.exec(fullCommand, sudoOptions, async (error, stdout, stderr) => {
 				if (error) {
-					// If there's an error, emit it through the mock process
-					setImmediate(() => {
-						mockProcess.emit("error", error);
-					});
+					// Emit error event for the already-resolved process
+					mockProcess.emit("error", error);
 					return;
+				}
+
+				console.log("testing");
+
+				// For admin processes, the sudo.exec callback firing indicates the game has closed
+				// This is a reliable way to detect admin process termination
+				if (gameId) {
+					// Emit exit event to indicate the admin process has completed
+					mockProcess.emit("exit", 0, null);
 				}
 
 				// Try to find the actual PID of the elevated process
@@ -610,19 +632,57 @@ export class ProcessManager implements ProcessManagerInterface {
 					launchTime,
 				);
 
-				// Update the mock process with the actual PID if found
-				if (actualPid && mockProcess) {
+				// Update the mock process with actual PID if found
+				if (actualPid) {
 					(mockProcess as ExtendedChildProcess).actualPid = actualPid;
-
-					// Start monitoring the actual process for exit
+					// Update process info with real PID if available
 					if (gameId) {
-						this.startElevatedProcessMonitoring(gameId, actualPid, mockProcess);
+						const processInfo = this.processInfo.get(gameId);
+						if (processInfo) {
+							processInfo.metadata = {
+								...processInfo.metadata,
+								hasRealPid: true,
+							};
+						}
 					}
 				}
 
-				// For admin processes, sudo.exec completing means the process started successfully
-				// We don't emit exit here because the process is now running independently
-				// Exit events will be handled by the process monitoring if we found the actual PID
+				// Handle stdout/stderr if needed
+				const stdoutStr = stdout
+					? typeof stdout === "string"
+						? stdout
+						: stdout.toString()
+					: "";
+				const stderrStr = stderr
+					? typeof stderr === "string"
+						? stderr
+						: stderr.toString()
+					: "";
+
+				// Emit output events if there's captured output and valid PID
+				if (stdoutStr && gameId && mockProcess.pid) {
+					this.eventEmitter.emit("output", {
+						gameId,
+						pid: mockProcess.pid,
+						type: "stdout",
+						data: stdoutStr,
+						timestamp: new Date(),
+					});
+				}
+
+				if (stderrStr && gameId && mockProcess.pid) {
+					this.eventEmitter.emit("output", {
+						gameId,
+						pid: mockProcess.pid,
+						type: "stderr",
+						data: stderrStr,
+						timestamp: new Date(),
+					});
+				}
+
+				// Note: We don't emit an exit event here because the sudo.exec callback
+				// completion only means the elevated command finished, not that the game exited.
+				// The actual game exit will be detected by process monitoring.
 			});
 		});
 	}
@@ -633,7 +693,7 @@ export class ProcessManager implements ProcessManagerInterface {
 		captureOutput?: boolean,
 		actualPid?: number,
 		gameId?: string,
-	): ChildProcess {
+	): ExtendedChildProcess {
 		// Create a minimal mock ChildProcess for admin processes
 		// This is necessary because sudo-prompt doesn't return a real ChildProcess
 		const pid = actualPid || Math.floor(Math.random() * 100000) + 1000;
@@ -678,9 +738,10 @@ export class ProcessManager implements ProcessManagerInterface {
 			return false;
 		};
 
-		const mockProcess = {
+		const mockProcess: ExtendedChildProcess = {
 			pid: pid,
 			actualPid: actualPid, // Store the actual PID for metadata purposes
+			isAdminProcess: true, // Mark as admin process from creation
 			kill: (signal?: string | number) => {
 				// For admin processes with actual PIDs, attempt to kill the real process
 				if (actualPid) {
@@ -769,131 +830,35 @@ export class ProcessManager implements ProcessManagerInterface {
 			unref: () => {},
 			ref: () => {},
 			send: () => false,
-		} as unknown as ChildProcess;
+		} as unknown as ExtendedChildProcess;
 
-		// Simulate immediate spawn for admin processes
-		// Use setImmediate to ensure the event is emitted in the next tick
+		// For admin processes, emit spawn immediately but mark as admin to prevent
+		// premature exit detection during UAC prompt handling
 		setImmediate(() => {
-			emit("spawn");
-			// Admin processes are considered "detached" and running independently
-			// We don't emit exit events as they run with elevated privileges
+			mockProcess.emit("spawn");
 		});
 
 		return mockProcess;
-	}
-
-	private startElevatedProcessMonitoring(
-		gameId: string,
-		actualPid: number,
-		mockProcess: ChildProcess,
-	): void {
-		// Wait a bit before starting monitoring to give the process time to start
-		setTimeout(() => {
-			let processFoundOnce = false;
-			let consecutiveNotFoundCount = 0;
-			const MAX_NOT_FOUND_COUNT = 3; // Allow 3 consecutive "not found" before considering it dead
-
-			console.log(`[DEBUG] Starting monitoring for PID ${actualPid}`);
-
-			// Monitor the actual elevated process for exit
-			const monitorInterval = setInterval(() => {
-				try {
-					let processExists = false;
-
-					if (getPlatform() === "win32") {
-						// Check if process is still running on Windows
-						try {
-							const result = execSync(
-								`tasklist /FI "PID eq ${actualPid}" /FO CSV /NH`,
-								{
-									stdio: "pipe",
-									encoding: "utf8",
-								},
-							);
-							console.log(
-								`[DEBUG] Tasklist result for PID ${actualPid}:`,
-								result.trim(),
-							);
-							// If the result contains the PID, the process exists
-							processExists = result.includes(`"${actualPid}"`);
-						} catch (error) {
-							console.log(
-								`[DEBUG] Tasklist error for PID ${actualPid}:`,
-								error,
-							);
-							processExists = false;
-						}
-					} else {
-						// Check if process is still running on Unix-like systems
-						try {
-							process.kill(actualPid, 0); // Signal 0 checks if process exists
-							processExists = true;
-						} catch {
-							processExists = false;
-						}
-					}
-
-					console.log(
-						`[DEBUG] PID ${actualPid} exists: ${processExists}, foundOnce: ${processFoundOnce}, notFoundCount: ${consecutiveNotFoundCount}`,
-					);
-
-					if (processExists) {
-						processFoundOnce = true;
-						consecutiveNotFoundCount = 0;
-					} else {
-						consecutiveNotFoundCount++;
-
-						// Only consider the process dead if:
-						// 1. We found it at least once before (it was running)
-						// 2. We haven't found it for several consecutive checks
-						if (
-							processFoundOnce &&
-							consecutiveNotFoundCount >= MAX_NOT_FOUND_COUNT
-						) {
-							console.log(
-								`[DEBUG] Process ${actualPid} considered dead, emitting exit`,
-							);
-							clearInterval(monitorInterval);
-							this.detachedMonitoringIntervals.delete(gameId);
-							setImmediate(() => {
-								mockProcess.emit("exit", 0, null);
-							});
-						}
-					}
-				} catch (error) {
-					// Error checking process status
-					console.log(`[DEBUG] Error checking process ${actualPid}:`, error);
-					consecutiveNotFoundCount++;
-					if (
-						processFoundOnce &&
-						consecutiveNotFoundCount >= MAX_NOT_FOUND_COUNT
-					) {
-						console.log(
-							`[DEBUG] Process ${actualPid} considered dead due to error, emitting exit`,
-						);
-						clearInterval(monitorInterval);
-						this.detachedMonitoringIntervals.delete(gameId);
-						setImmediate(() => {
-							mockProcess.emit("exit", 1, null);
-						});
-					}
-				}
-			}, 2000); // Check every 2 seconds
-
-			// Store the interval for cleanup
-			this.detachedMonitoringIntervals.set(gameId, monitorInterval);
-		}, 3000); // Wait 3 seconds before starting monitoring
 	}
 
 	private setupProcessHandlers(gameId: string, process: ChildProcess): void {
 		let hasExited = false;
 		const startTime = Date.now();
 		const MIN_RUNTIME_MS = 500; // Minimum time before considering exit as legitimate
+		const isAdminProcess =
+			"isAdminProcess" in process && process.isAdminProcess === true;
 
 		process.on("exit", (code, signal) => {
 			if (!hasExited) {
 				hasExited = true;
 				const runtime = Date.now() - startTime;
+
+				// For admin processes, don't apply quick exit logic as they handle lifecycle differently
+				if (isAdminProcess) {
+					// Admin processes handle their own exit detection via sudo.exec callback
+					this.handleProcessExit(gameId, code, signal);
+					return;
+				}
 
 				// If process exits too quickly, it might be a GUI app that spawned successfully
 				// but detached immediately (common with Windows GUI apps)
@@ -1064,6 +1029,10 @@ export class ProcessManager implements ProcessManagerInterface {
 
 		// Clean up process cache entries
 		this.processCache.removeProcess(gameId);
+
+		// Clean up retry counter and last seen time
+		this.processRetryCounters.delete(gameId);
+		this.processLastSeenTimes.delete(gameId);
 	}
 
 	private updateProcessStatus(gameId: string, status: GameStatus): void {
@@ -1456,12 +1425,16 @@ export class ProcessManager implements ProcessManagerInterface {
 					}
 				}
 
-				// Check which processes are missing
+				// Check which processes are missing with retry mechanism
 				chunk.forEach((pid) => {
-					if (!foundPids.has(pid)) {
-						const gameId = pidToGameId.get(pid);
-						if (gameId) {
-							this.handleProcessExit(gameId, null, null);
+					const gameId = pidToGameId.get(pid);
+					if (gameId) {
+						if (!foundPids.has(pid)) {
+							// Process not found, increment retry counter
+							this.incrementRetryCounter(gameId);
+						} else {
+							// Process found, reset retry counter
+							this.resetRetryCounter(gameId);
 						}
 					}
 				});
@@ -1474,9 +1447,12 @@ export class ProcessManager implements ProcessManagerInterface {
 							const process = processes.get(gameId)?.process;
 							if (process) {
 								process.kill(0);
+								// Process responded to signal, reset retry counter
+								this.resetRetryCounter(gameId);
 							}
 						} catch {
-							this.handleProcessExit(gameId, null, null);
+							// Process didn't respond to signal, increment retry counter
+							this.incrementRetryCounter(gameId);
 						}
 					}
 				});
@@ -1508,9 +1484,9 @@ export class ProcessManager implements ProcessManagerInterface {
 					result.trim() !== "";
 
 				if (!isRunning) {
-					// All processes with this executable have exited
+					// Executable not found, increment retry counters for all processes
 					gameIds.forEach((gameId) => {
-						this.handleProcessExit(gameId, 0, null);
+						this.incrementRetryCounter(gameId);
 					});
 				} else {
 					// For running processes, check individual PIDs if available
@@ -1535,19 +1511,24 @@ export class ProcessManager implements ProcessManagerInterface {
 										pidResult.includes("INFO: No tasks are running") ||
 										pidResult.trim() === ""
 									) {
-										this.handleProcessExit(gameId, 0, null);
+										// Process with specific PID not found, increment retry counter
+										this.incrementRetryCounter(gameId);
+									} else {
+										// Process found, reset retry counter
+										this.resetRetryCounter(gameId);
 									}
 								} catch {
-									this.handleProcessExit(gameId, 0, null);
+									// Error checking process, increment retry counter
+									this.incrementRetryCounter(gameId);
 								}
 							}
 						}
 					});
 				}
 			} catch {
-				// Fallback: mark all processes with this executable as exited
+				// Fallback: increment retry counters for all processes with this executable
 				gameIds.forEach((gameId) => {
-					this.handleProcessExit(gameId, 0, null);
+					this.incrementRetryCounter(gameId);
 				});
 			}
 		});
@@ -1602,9 +1583,12 @@ export class ProcessManager implements ProcessManagerInterface {
 				try {
 					if (process.pid) {
 						process.kill(0);
+						// Process responded to signal, reset retry counter
+						this.resetRetryCounter(gameId);
 					}
 				} catch {
-					this.handleProcessExit(gameId, null, null);
+					// Process didn't respond to signal, increment retry counter
+					this.incrementRetryCounter(gameId);
 				}
 			}
 		});
@@ -1632,12 +1616,16 @@ export class ProcessManager implements ProcessManagerInterface {
 				}
 			}
 
-			// Check which processes are missing
+			// Check which processes are missing with retry mechanism
 			pids.forEach((pid) => {
-				if (!foundPids.has(pid)) {
-					const gameId = pidToGameId.get(pid);
-					if (gameId) {
-						this.handleProcessExit(gameId, null, null);
+				const gameId = pidToGameId.get(pid);
+				if (gameId) {
+					if (!foundPids.has(pid)) {
+						// Process not found, increment retry counter
+						this.incrementRetryCounter(gameId);
+					} else {
+						// Process found, reset retry counter
+						this.resetRetryCounter(gameId);
 					}
 				}
 			});
@@ -1648,8 +1636,11 @@ export class ProcessManager implements ProcessManagerInterface {
 				if (gameId) {
 					try {
 						process.kill(pid, 0);
+						// Process responded to signal, reset retry counter
+						this.resetRetryCounter(gameId);
 					} catch {
-						this.handleProcessExit(gameId, null, null);
+						// Process didn't respond to signal, increment retry counter
+						this.incrementRetryCounter(gameId);
 					}
 				}
 			});
@@ -1723,10 +1714,104 @@ export class ProcessManager implements ProcessManagerInterface {
 		this.processCache.cacheProcessMetrics(gameId, metrics);
 	}
 
+	/**
+	 * Increment retry counter for a process and handle exit if max retries reached
+	 * @param gameId Game identifier
+	 */
+	private incrementRetryCounter(gameId: string): void {
+		const currentRetries = this.processRetryCounters.get(gameId) || 0;
+		const newRetries = currentRetries + 1;
+
+		this.processRetryCounters.set(gameId, newRetries);
+
+		this.logger.debug(
+			`Process ${gameId} failed check ${newRetries}/${this.maxRetries}`,
+			{
+				gameId,
+				retries: newRetries,
+				maxRetries: this.maxRetries,
+			},
+		);
+
+		if (newRetries >= this.maxRetries) {
+			this.logger.info(
+				`Process ${gameId} exceeded max retries, marking as exited`,
+				{
+					gameId,
+					retries: newRetries,
+					maxRetries: this.maxRetries,
+				},
+			);
+
+			// Clean up retry counter before handling exit
+			this.processRetryCounters.delete(gameId);
+
+			// Now handle the actual process exit
+			this.handleProcessExit(gameId, null, null);
+		}
+	}
+
+	/**
+	 * Reset retry counter for a process (called when process is found to be running)
+	 * @param gameId Game identifier
+	 */
+	private resetRetryCounter(gameId: string): void {
+		const hadRetries = this.processRetryCounters.has(gameId);
+		if (hadRetries) {
+			this.processRetryCounters.delete(gameId);
+			this.logger.debug(`Reset retry counter for process ${gameId}`, {
+				gameId,
+			});
+		}
+
+		// Update last seen time for this process
+		this.processLastSeenTimes.set(gameId, Date.now());
+	}
+
+	/**
+	 * Start timer to periodically reset retry counters for stable processes
+	 */
+	private startRetryResetTimer(): void {
+		if (this.retryResetTimer) return;
+
+		this.retryResetTimer = setInterval(
+			() => {
+				const now = Date.now();
+				const processesToReset: string[] = [];
+
+				// Find processes that have been stable for the reset interval
+				this.processLastSeenTimes.forEach((lastSeenTime, gameId) => {
+					if (now - lastSeenTime >= this.retryResetInterval) {
+						// Process has been stable, reset its retry counter if it has one
+						if (this.processRetryCounters.has(gameId)) {
+							processesToReset.push(gameId);
+						}
+					}
+				});
+
+				// Reset retry counters for stable processes
+				processesToReset.forEach((gameId) => {
+					this.processRetryCounters.delete(gameId);
+					this.logger.debug(
+						`Auto-reset retry counter for stable process ${gameId}`,
+						{ gameId },
+					);
+				});
+			},
+			Math.min(this.retryResetInterval / 2, 10000),
+		); // Check every half the reset interval or 10 seconds, whichever is smaller
+	}
+
 	destroy(): void {
 		if (this.monitoringInterval) {
 			clearInterval(this.monitoringInterval);
 			this.monitoringInterval = undefined;
+		}
+
+		// Clear retry reset timer
+		if (this.retryResetTimer) {
+			clearInterval(this.retryResetTimer);
+			this.retryResetTimer = undefined;
 		}
 
 		// Clear all detached monitoring intervals
@@ -1760,5 +1845,8 @@ export class ProcessManager implements ProcessManagerInterface {
 		// RACE CONDITION FIX: Clear synchronization structures
 		this.processStateLocks.clear();
 		this.processingOperations.clear();
+		// Clear retry counters and last seen times
+		this.processRetryCounters.clear();
+		this.processLastSeenTimes.clear();
 	}
 }
