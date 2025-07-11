@@ -21,6 +21,10 @@
 	"scripts": {
 		"build": "tsdown",
 		"dev": "tsdown --watch",
+		"prepublishOnly": "npm run build",
+		"test:dist": "node test-dist.js",
+		"test:dist:cjs": "node test-dist.cjs",
+		"test:build": "npm run build && npm run test:dist",
 		"check": "biome check .",
 		"check:unsafe": "biome check --write --unsafe .",
 		"check:write": "biome check --write ."
@@ -42,8 +46,7 @@
 	},
 	"files": [
 		"dist/**/*",
-		"README.md",
-		"package.json"
+		"README.md"
 	],
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.6",
