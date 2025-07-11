@@ -11,12 +11,14 @@ export default defineConfig({
 	clean: true,
 	shims: true,
 	sourcemap: true, // Generate source maps for debugging
-	// External dependencies (Node.js built-ins)
+	// External dependencies (Node.js built-ins and third-party packages)
 	external: [
 		"node:events",
 		"node:child_process",
+		"node:fs",
 		"node:fs/promises",
 		"node:path",
 		"node:os",
+		"@expo/sudo-prompt",
 	],
 });
