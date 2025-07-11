@@ -3,14 +3,15 @@
 	"version": "0.5.1",
 	"description": "Cross-platform Node.js utility package for managing game processes",
 	"license": "BSD-3-Clause",
-	"main": "dist/index.cjs",
+	"main": "dist/index.js",
 	"module": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
-			"require": "./dist/index.cjs"
+      "require": "./dist/index.js",
+			"default": "./dist/index.js"
 		}
 	},
 	"publishConfig": {
@@ -19,12 +20,12 @@
 	"type": "module",
 	"private": false,
 	"scripts": {
-		"build": "tsdown",
+		"build": "bun build --target=node ./src/index.ts --outfile=dist/index.js && tsc --emitDeclarationOnly --declaration --outDir dist",
 		"dev": "tsdown --watch",
-		"prepublishOnly": "npm run build",
+		"prepublishOnly": "bun run build",
 		"test:dist": "node test-dist.js",
 		"test:dist:cjs": "node test-dist.cjs",
-		"test:build": "npm run build && npm run test:dist",
+		"test:build": "bun run build && bun run test:dist",
 		"check": "biome check .",
 		"check:unsafe": "biome check --write --unsafe .",
 		"check:write": "biome check --write ."
@@ -51,7 +52,9 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.6",
 		"@types/bun": "latest",
-		"tsdown": "^0.12.9"
+		"tsdown": "^0.12.9",
+		"typescript": "^5.0.0",
+		"rimraf": "^5.0.10"
 	},
 	"peerDependencies": {
 		"typescript": "^5"
