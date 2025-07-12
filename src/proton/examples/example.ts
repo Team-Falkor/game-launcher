@@ -1,5 +1,5 @@
-import { ProtonManager } from "./ProtonManager.js";
-import type { ProtonVariant } from "./types.js";
+import type { ProtonVariant } from "@/@types";
+import { ProtonManager } from "../core/ProtonManager";
 
 /**
  * Example usage of ProtonManager for listing available Proton versions
@@ -87,7 +87,7 @@ async function demonstrateProtonListing() {
 			"proton-ge",
 			"proton-experimental",
 			"proton-stable",
-			"proton-tkg",
+			"wine-ge",
 		];
 
 		for (const variant of variants) {

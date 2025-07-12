@@ -253,7 +253,7 @@ export class GameLauncher implements GameLauncherInterface {
 		return this;
 	}
 
-	destroy(): void {
+	async destroy(): Promise<void> {
 		this.processManager.destroy();
 		this.eventEmitter.removeAllListeners();
 	}

@@ -1,7 +1,11 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { DetectedProtonBuild, InstallSource } from "./types";
+import type {
+	DetectedProtonBuild,
+	InstallSource,
+	ProtonVariant,
+} from "@/@types";
 
 /**
  * Detects installed Proton builds from various sources
@@ -223,7 +227,7 @@ export class ProtonDetector {
 	 */
 	private parseProtonVersion(dirName: string): {
 		version: string;
-		variant: string;
+		variant: ProtonVariant;
 	} {
 		const name = dirName.toLowerCase();
 
@@ -235,12 +239,10 @@ export class ProtonDetector {
 			return { version, variant: "proton-ge" };
 		}
 
-		// Proton-TKG patterns
-		if (name.includes("tkg") || name.includes("proton-tkg")) {
-			const version = dirName
-				.replace(/proton-?tkg-?/i, "")
-				.replace(/^tkg-?/i, "");
-			return { version, variant: "proton-tkg" };
+		// Wine-GE patterns
+		if (name.includes("wine-ge") || name.toLowerCase().includes("wine-ge")) {
+			const version = dirName.replace(/wine-?ge-?/i, "").replace(/^ge-?/i, "");
+			return { version, variant: "wine-ge" };
 		}
 
 		// Steam Proton patterns

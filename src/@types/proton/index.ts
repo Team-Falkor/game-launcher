@@ -17,13 +17,22 @@ export interface ProtonVersionInfo {
 	size?: number; // Size in bytes if known
 	releaseDate?: Date;
 	description?: string;
+	isPrerelease?: boolean; // Whether this is a prerelease/experimental version
+	releaseName?: string; // GitHub release name for beta detection
+}
+
+/**
+ * Extended version info used internally for filtering and processing
+ */
+export interface ExtendedProtonVersionInfo extends ProtonVersionInfo {
+	releaseName: string;
 }
 
 export interface ProtonVersions {
 	"proton-ge": ProtonVersionInfo[];
 	"proton-experimental": ProtonVersionInfo[];
 	"proton-stable": ProtonVersionInfo[];
-	"proton-tkg": ProtonVersionInfo[];
+	"wine-ge": ProtonVersionInfo[];
 	[key: string]: ProtonVersionInfo[]; // Allow for additional proton variants
 }
 
@@ -49,7 +58,7 @@ export interface ProtonInstallOptions {
 		| "proton-ge"
 		| "proton-experimental"
 		| "proton-stable"
-		| "proton-tkg"
+		| "wine-ge"
 		| string;
 	installPath?: string;
 	force?: boolean; // Overwrite existing installation
@@ -79,7 +88,7 @@ export type ProtonVariant =
 	| "proton-ge"
 	| "proton-experimental"
 	| "proton-stable"
-	| "proton-tkg";
+	| "wine-ge";
 export type InstallSource =
 	| "steam"
 	| "manual"

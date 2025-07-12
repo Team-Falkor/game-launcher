@@ -202,5 +202,6 @@ export interface GameLauncherInterface {
 		event: K,
 		listener: GameProcessEvents[K],
 	): this;
-	removeAllListeners(event?: keyof GameProcessEvents): this;
+	removeAllListeners(): this;
+	destroy(): Promise<void>;
 }

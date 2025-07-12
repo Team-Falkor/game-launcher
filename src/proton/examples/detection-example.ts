@@ -1,4 +1,5 @@
-import { ProtonDetector, ProtonManager } from "./index";
+import { ProtonDetector } from "../core/ProtonDetector";
+import { ProtonManager } from "../core/ProtonManager";
 
 /**
  * Demonstrates the Proton detection system
@@ -20,22 +21,30 @@ async function demonstrateProtonDetection() {
 	console.log();
 
 	if (!protonManager.isProtonSupported()) {
-		console.log('⚠️  Proton detection and management features are not available on this platform.');
-		console.log('Proton is specifically designed for Linux systems to run Windows games.');
-		console.log('\nHowever, you can still browse available Proton versions for reference:\n');
-		
+		console.log(
+			"⚠️  Proton detection and management features are not available on this platform.",
+		);
+		console.log(
+			"Proton is specifically designed for Linux systems to run Windows games.",
+		);
+		console.log(
+			"\nHowever, you can still browse available Proton versions for reference:\n",
+		);
+
 		// Show available versions even on non-Linux systems
 		const availableVersions = await protonManager.listAvailableProtonVersions();
 		let totalVersions = 0;
-		
+
 		for (const [variant, versions] of Object.entries(availableVersions)) {
 			if (versions.length > 0) {
 				console.log(`${variant}: ${versions.length} versions available`);
 				totalVersions += versions.length;
 			}
 		}
-		
-		console.log(`\nTotal: ${totalVersions} Proton versions available for Linux systems`);
+
+		console.log(
+			`\nTotal: ${totalVersions} Proton versions available for Linux systems`,
+		);
 		return;
 	}
 

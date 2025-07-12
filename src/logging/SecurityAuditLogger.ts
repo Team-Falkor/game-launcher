@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { LoggerConfig, SecurityAuditEntry } from "../@types/logging";
-import { SecurityEvent } from "../@types/logging";
+import type { LoggerConfig, SecurityAuditEntry } from "../@types/core/logging";
+import { SecurityEvent } from "../@types/core/logging";
 
 /**
  * Security audit logger for tracking security-relevant events

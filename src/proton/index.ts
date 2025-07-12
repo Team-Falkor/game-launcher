@@ -7,9 +7,6 @@
  * - Caching version data to reduce API calls
  */
 
-export { ProtonDetector } from "./ProtonDetector.js";
-export { ProtonManager } from "./ProtonManager.js";
-export { ProtonVersionFetcher } from "./ProtonVersionFetcher.js";
 export type {
 	DetectedProtonBuild,
 	InstallSource,
@@ -20,4 +17,6 @@ export type {
 	ProtonVariant,
 	ProtonVersionInfo,
 	ProtonVersions,
-} from "./types.js";
+} from "../@types/proton";
+export * from "./config";
+export * from "./core";

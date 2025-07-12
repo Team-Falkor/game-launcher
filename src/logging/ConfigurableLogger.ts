@@ -8,7 +8,7 @@ import type {
 	LoggerConfig,
 	LogLevel,
 } from "@/@types";
-import type { LoggingOptions } from "../@types/launcher";
+import type { LoggingOptions } from "../@types/core/launcher";
 
 /**
  * Enhanced configurable logger with comprehensive output options

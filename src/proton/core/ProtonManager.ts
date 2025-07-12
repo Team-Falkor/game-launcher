@@ -1,12 +1,13 @@
 import os from "node:os";
-import { ProtonDetector } from "./ProtonDetector";
-import { ProtonVersionFetcher } from "./ProtonVersionFetcher";
 import type {
 	DetectedProtonBuild,
 	ProtonVariant,
 	ProtonVersionInfo,
 	ProtonVersions,
-} from "./types";
+} from "@/@types";
+import { ProtonDetector } from "./ProtonDetector";
+import { ProtonVersionFetcher } from "./ProtonVersionFetcher";
+
 /**
  * Main class for managing Proton versions
  * Note: Proton is a Linux-only compatibility layer for running Windows games
@@ -41,7 +42,7 @@ export class ProtonManager {
 		}
 
 		console.log("Fetching available Proton versions...");
-		const versions = await this.versionFetcher.fetchAvailableVersions();
+		const versions = await this.versionFetcher.fetchAllVersions();
 
 		// Get installed builds and update installation status
 		const installedBuilds = await this.getInstalledProtonBuilds();
@@ -242,7 +243,7 @@ export class ProtonManager {
 			"proton-ge": [],
 			"proton-experimental": [],
 			"proton-stable": [],
-			"proton-tkg": [],
+			"wine-ge": [],
 		};
 
 		// Create a map of installed builds for quick lookup
