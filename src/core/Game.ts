@@ -11,7 +11,12 @@ import type {
 } from "../@types";
 import type { GameEventEmitter } from "./EventEmitter";
 
-type GameEventData = GameLaunchedEvent | GameClosedEvent | GameErrorEvent | GameOutputEvent | GameStatusChangeEvent;
+type GameEventData =
+	| GameLaunchedEvent
+	| GameClosedEvent
+	| GameErrorEvent
+	| GameOutputEvent
+	| GameStatusChangeEvent;
 type EventListener = (data: GameEventData) => void;
 
 /**

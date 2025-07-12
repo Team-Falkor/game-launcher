@@ -617,8 +617,6 @@ export class ProcessManager implements ProcessManagerInterface {
 					return;
 				}
 
-				console.log("testing");
-
 				// For admin processes, the sudo.exec callback firing indicates the game has closed
 				// This is a reliable way to detect admin process termination
 				if (gameId) {

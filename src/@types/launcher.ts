@@ -5,8 +5,14 @@ import type { GameProcessInfo } from "./process";
 // Forward declaration for Game class to avoid circular dependency
 export interface Game {
 	readonly id: string;
-	on<K extends keyof GameProcessEvents>(event: K, listener: GameProcessEvents[K]): Game;
-	off<K extends keyof GameProcessEvents>(event: K, listener: GameProcessEvents[K]): Game;
+	on<K extends keyof GameProcessEvents>(
+		event: K,
+		listener: GameProcessEvents[K],
+	): Game;
+	off<K extends keyof GameProcessEvents>(
+		event: K,
+		listener: GameProcessEvents[K],
+	): Game;
 	removeAllListeners(): Game;
 	isRunning(): boolean;
 	getInfo(): GameProcessInfo | null;

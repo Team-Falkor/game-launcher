@@ -19,9 +19,10 @@ launcher.on("launched", (game) => {
 })
 
   const game = await launcher.launchGame({
-    gameId: "vampireSurvivors",
+    gameId: "vampireSurvivors",    
     executable: "C:\\Games\\Vampire Survivors\\VampireSurvivors.exe",
-    runAsAdmin: true
+    runAsAdmin: true,
+    args: ["--fullscreen"]
   })
   
   game.on("closed", (data) => {
