@@ -31,7 +31,9 @@ jobs:
         run: bun install
 
       - name: Build package
-        run: bun run build
+        env:
+          NODE_ENV: production
+        run: bun run build:prod
 
       - name: Extract version from package.json
         id: get_version
@@ -46,6 +48,7 @@ jobs:
           name: Release v${{ steps.get_version.outputs.current-version }}
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

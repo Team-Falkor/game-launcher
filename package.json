@@ -20,7 +20,8 @@
 	"type": "module",
 	"private": false,
 	"scripts": {
-		"build": "bun build --target=node ./src/index.ts --outfile=dist/index.js && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build:dev": "NODE_ENV=development bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build:prod": "NODE_ENV=production bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
 		"dev": "tsdown --watch",
 		"prepublishOnly": "bun run build",
 		"test:dist": "node test-dist.js",
@@ -53,7 +54,6 @@
 		"@biomejs/biome": "^2.0.6",
 		"@types/bun": "latest",
 		"rimraf": "^5.0.10",
-		"tsdown": "^0.12.9",
 		"typescript": "^5.0.0"
 	},
 	"peerDependencies": {
