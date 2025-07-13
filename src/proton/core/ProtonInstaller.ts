@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import os from "node:os";
@@ -30,9 +31,26 @@ export interface DownloadProgressEvent {
 export interface DownloadStatusEvent {
 	variant: string;
 	version: string;
-	status: "started" | "downloading" | "extracting" | "completed" | "failed";
+	status:
+		| "started"
+		| "downloading"
+		| "extracting"
+		| "building"
+		| "completed"
+		| "failed";
 	message?: string;
 	error?: string;
+}
+
+/**
+ * Build progress event data
+ */
+export interface BuildProgressEvent {
+	variant: string;
+	version: string;
+	step: "configure" | "make" | "install";
+	message: string;
+	percentage?: number;
 }
 
 /**
@@ -42,6 +60,7 @@ export interface DownloadStatusEvent {
  * Events:
  * - 'download-progress': Emitted during download with progress information
  * - 'download-status': Emitted when download status changes
+ * - 'build-progress': Emitted during build steps
  * - 'install-progress': Emitted during installation steps
  * - 'install-complete': Emitted when installation completes
  * - 'install-error': Emitted when installation fails
@@ -239,6 +258,13 @@ export class ProtonInstaller extends EventEmitter {
 			} as DownloadStatusEvent);
 
 			await this.extractArchive(archivePath, installPath);
+
+			// Check if this is source code that needs building
+			const needsBuild = await this.detectSourceCode(installPath);
+			if (needsBuild && options.buildOptions?.enableBuild !== false) {
+				console.log("Source code detected, starting build process...");
+				await this.buildFromSource(installPath, options);
+			}
 
 			// Emit completion event
 			this.emit("download-status", {
@@ -526,6 +552,181 @@ export class ProtonInstaller extends EventEmitter {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Detects if extracted content is source code that needs building
+	 */
+	private async detectSourceCode(installPath: string): Promise<boolean> {
+		try {
+			// Check for common build files
+			const buildFiles = [
+				"Makefile",
+				"makefile",
+				"configure.sh",
+				"configure",
+				"build.sh",
+				"CMakeLists.txt",
+			];
+
+			for (const file of buildFiles) {
+				if (await this.pathExists(path.join(installPath, file))) {
+					return true;
+				}
+			}
+
+			// Check for source directories
+			const sourceDirs = ["src", "wine", "dxvk", "docker"];
+			for (const dir of sourceDirs) {
+				if (await this.pathExists(path.join(installPath, dir))) {
+					return true;
+				}
+			}
+
+			return false;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Builds Proton from source code
+	 */
+	private async buildFromSource(
+		installPath: string,
+		options: ProtonInstallOptions,
+	): Promise<void> {
+		const buildOptions = options.buildOptions || {};
+		const timeout = buildOptions.buildTimeout || 3600000; // 1 hour default
+		const makeJobs = buildOptions.makeJobs || os.cpus().length;
+
+		this.emit("download-status", {
+			variant: options.variant,
+			version: options.version,
+			status: "building",
+			message: "Building from source...",
+		} as DownloadStatusEvent);
+
+		try {
+			// Step 1: Configure
+			await this.runBuildStep(installPath, "configure", options, timeout);
+
+			// Step 2: Make
+			await this.runBuildStep(installPath, "make", options, timeout, [
+				"-j",
+				makeJobs.toString(),
+				...(buildOptions.makeArgs || []),
+			]);
+
+			// Step 3: Install
+			await this.runBuildStep(installPath, "install", options, timeout, [
+				"install",
+			]);
+		} catch (error) {
+			throw new Error(
+				`Build failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	/**
+	 * Runs a build step (configure, make, or install)
+	 */
+	private async runBuildStep(
+		installPath: string,
+		step: "configure" | "make" | "install",
+		options: ProtonInstallOptions,
+		timeout: number,
+		args: string[] = [],
+	): Promise<void> {
+		// Determine command and args before creating Promise
+		let command: string;
+		let commandArgs: string[] = [];
+
+		switch (step) {
+			case "configure":
+				// Try different configure methods
+				if (await this.pathExists(path.join(installPath, "configure.sh"))) {
+					command = "./configure.sh";
+				} else if (await this.pathExists(path.join(installPath, "configure"))) {
+					command = "./configure";
+				} else {
+					// Skip configure if no configure script found
+					return;
+				}
+				commandArgs = options.buildOptions?.configureArgs || [];
+				break;
+			case "make":
+				command = "make";
+				commandArgs = args;
+				break;
+			case "install":
+				command = "make";
+				commandArgs = args;
+				break;
+		}
+
+		return new Promise((resolve, reject) => {
+
+			this.emit("build-progress", {
+				variant: options.variant,
+				version: options.version,
+				step,
+				message: `Running ${command} ${commandArgs.join(" ")}`,
+			} as BuildProgressEvent);
+
+			const child = spawn(command, commandArgs, {
+				cwd: installPath,
+				stdio: ["ignore", "pipe", "pipe"],
+				shell: true,
+			});
+
+			let errorOutput = "";
+
+			child.stdout?.on("data", (data) => {
+				// Emit progress updates for verbose output
+				const lines = data.toString().split("\n");
+				for (const line of lines) {
+					if (line.trim()) {
+						this.emit("build-progress", {
+							variant: options.variant,
+							version: options.version,
+							step,
+							message: line.trim(),
+						} as BuildProgressEvent);
+					}
+				}
+			});
+
+			child.stderr?.on("data", (data) => {
+				errorOutput += data.toString();
+			});
+
+			const timer = setTimeout(() => {
+				child.kill("SIGTERM");
+				reject(new Error(`Build step '${step}' timed out after ${timeout}ms`));
+			}, timeout);
+
+			child.on("close", (code) => {
+				clearTimeout(timer);
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(
+						new Error(
+							`Build step '${step}' failed with exit code ${code}. Error: ${errorOutput}`,
+						),
+					);
+				}
+			});
+
+			child.on("error", (error) => {
+				clearTimeout(timer);
+				reject(
+					new Error(`Failed to start build step '${step}': ${error.message}`),
+				);
+			});
+		});
 	}
 
 	/**

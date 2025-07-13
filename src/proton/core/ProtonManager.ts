@@ -419,9 +419,9 @@ export class ProtonManager {
 	}
 
 	/**
-	 * Convenience method to add event listeners for installation progress
+	 * Convenience method to add event listeners for download progress
 	 */
-	onInstallProgress(
+	onDownloadProgress(
 		listener: (event: import('./ProtonInstaller').DownloadProgressEvent) => void,
 	): void {
 		this.protonInstaller.on('download-progress', listener);
@@ -434,6 +434,15 @@ export class ProtonManager {
 		listener: (event: import('./ProtonInstaller').DownloadStatusEvent) => void,
 	): void {
 		this.protonInstaller.on('download-status', listener);
+	}
+
+	/**
+	 * Convenience method to add event listeners for build progress
+	 */
+	onBuildProgress(
+		listener: (event: import('./ProtonInstaller').BuildProgressEvent) => void,
+	): void {
+		this.protonInstaller.on('build-progress', listener);
 	}
 
 	/**

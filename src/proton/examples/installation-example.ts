@@ -57,7 +57,7 @@ export async function demonstrateProtonInstallation(): Promise<void> {
 		}
 	});
 	
-	protonManager.onInstallProgress((event: DownloadProgressEvent) => {
+	protonManager.onDownloadProgress((event: DownloadProgressEvent) => {
 		const progressBar = '█'.repeat(Math.floor(event.percentage / 5)) + '░'.repeat(20 - Math.floor(event.percentage / 5));
 		const speedMB = (event.speed / 1024 / 1024).toFixed(1);
 		const etaMin = Math.floor(event.estimatedTimeRemaining / 60);
