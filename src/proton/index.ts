@@ -20,3 +20,7 @@ export type {
 } from "../@types/proton";
 export * from "./config";
 export * from "./core";
+export type {
+	DownloadProgressEvent,
+	DownloadStatusEvent,
+} from "./core/ProtonInstaller";

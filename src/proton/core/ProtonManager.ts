@@ -1,11 +1,16 @@
 import os from "node:os";
 import type {
 	DetectedProtonBuild,
+	ProtonInstallOptions,
+	ProtonInstallResult,
+	ProtonRemoveOptions,
+	ProtonRemoveResult,
 	ProtonVariant,
 	ProtonVersionInfo,
 	ProtonVersions,
 } from "@/@types";
 import { ProtonDetector } from "./ProtonDetector";
+import { ProtonInstaller } from "./ProtonInstaller";
 import { ProtonVersionFetcher } from "./ProtonVersionFetcher";
 
 /**
@@ -16,6 +21,7 @@ import { ProtonVersionFetcher } from "./ProtonVersionFetcher";
 export class ProtonManager {
 	private versionFetcher: ProtonVersionFetcher;
 	private protonDetector: ProtonDetector;
+	private protonInstaller: ProtonInstaller;
 	private cachedVersions: ProtonVersions | null = null;
 	private cachedInstalledBuilds: DetectedProtonBuild[] | null = null;
 	private cacheTimestamp: number = 0;
@@ -27,6 +33,7 @@ export class ProtonManager {
 		this.isLinux = os.platform() === "linux";
 		this.versionFetcher = new ProtonVersionFetcher();
 		this.protonDetector = new ProtonDetector();
+		this.protonInstaller = new ProtonInstaller();
 	}
 
 	/**
@@ -294,5 +301,163 @@ export class ProtonManager {
 	async refreshVersions(): Promise<ProtonVersions> {
 		this.clearCache();
 		return this.listAvailableProtonVersions();
+	}
+
+	/**
+	 * Installs a Proton version
+	 * Returns error on non-Linux systems since Proton is Linux-only
+	 */
+	async installProtonVersion(
+		options: ProtonInstallOptions,
+	): Promise<ProtonInstallResult> {
+		const result = await this.protonInstaller.installProtonVersion(options);
+
+		// Clear caches to reflect the new installation
+		if (result.success) {
+			this.cachedInstalledBuilds = null;
+			this.installedCacheTimestamp = 0;
+			this.cachedVersions = null;
+			this.cacheTimestamp = 0;
+		}
+
+		return result;
+	}
+
+	/**
+	 * Removes a Proton version
+	 * Returns error on non-Linux systems since Proton is Linux-only
+	 */
+	async removeProtonVersion(
+		options: ProtonRemoveOptions,
+	): Promise<ProtonRemoveResult> {
+		const result = await this.protonInstaller.removeProtonVersion(options);
+
+		// Clear caches to reflect the removal
+		if (result.success) {
+			this.cachedInstalledBuilds = null;
+			this.installedCacheTimestamp = 0;
+			this.cachedVersions = null;
+			this.cacheTimestamp = 0;
+		}
+
+		return result;
+	}
+
+	/**
+	 * Checks if Proton installation is supported on this system
+	 */
+	isInstallationSupported(): boolean {
+		return this.protonInstaller.isInstallationSupported();
+	}
+
+	/**
+	 * Gets the compatibility tools directory path
+	 */
+	getCompatibilityToolsDirectory(): string {
+		return this.protonInstaller.getCompatibilityToolsDirectory();
+	}
+
+	/**
+	 * Installs the latest version of a specific Proton variant
+	 */
+	async installLatestVersion(
+		variant: ProtonVariant,
+		force = false,
+	): Promise<ProtonInstallResult> {
+		const latest = await this.getLatestVersion(variant);
+
+		if (!latest) {
+			return {
+				success: false,
+				version: "unknown",
+				variant,
+				installPath: "",
+				error: `No versions found for ${variant}`,
+			};
+		}
+
+		return this.installProtonVersion({
+			version: latest.version,
+			variant,
+			force,
+		});
+	}
+
+	/**
+	 * Gets installation status for a specific version
+	 */
+	async getInstallationStatus(
+		variant: ProtonVariant,
+		version: string,
+	): Promise<{
+		installed: boolean;
+		installPath?: string;
+		installSource?: string;
+	}> {
+		const installedBuilds = await this.getInstalledProtonBuilds();
+		const build = installedBuilds.find(
+			(b) => b.variant === variant && b.version === version,
+		);
+		
+		if (build) {
+			return {
+				installed: true,
+				installPath: build.installPath,
+				installSource: build.installSource,
+			};
+		}
+		
+		return { installed: false };
+	}
+
+	/**
+	 * Subscribe to installation events
+	 * Returns the ProtonInstaller instance for event listening
+	 */
+	getInstaller() {
+		return this.protonInstaller;
+	}
+
+	/**
+	 * Convenience method to add event listeners for installation progress
+	 */
+	onInstallProgress(
+		listener: (event: import('./ProtonInstaller').DownloadProgressEvent) => void,
+	): void {
+		this.protonInstaller.on('download-progress', listener);
+	}
+
+	/**
+	 * Convenience method to add event listeners for installation status changes
+	 */
+	onInstallStatus(
+		listener: (event: import('./ProtonInstaller').DownloadStatusEvent) => void,
+	): void {
+		this.protonInstaller.on('download-status', listener);
+	}
+
+	/**
+	 * Convenience method to add event listeners for installation completion
+	 */
+	onInstallComplete(
+		listener: (event: { variant: ProtonVariant; version: string; installPath: string }) => void,
+	): void {
+		this.protonInstaller.on('install-complete', listener);
+	}
+
+	/**
+	 * Convenience method to add event listeners for installation errors
+	 */
+	onInstallError(
+		listener: (event: { variant: ProtonVariant; version: string; error: string }) => void,
+	): void {
+		this.protonInstaller.on('install-error', listener);
+	}
+
+	/**
+	 * Remove all event listeners from the installer
+	 */
+	removeAllInstallListeners(): void {
+		this.protonInstaller.removeAllListeners();
 	}
 }

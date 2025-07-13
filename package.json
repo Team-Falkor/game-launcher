@@ -20,8 +20,8 @@
 	"type": "module",
 	"private": false,
 	"scripts": {
-    "build:dev": "NODE_ENV=development bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
-    "build:prod": "NODE_ENV=production bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
+		"build:dev": "NODE_ENV=development bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
+		"build:prod": "NODE_ENV=production bun run build.ts && tsc --emitDeclarationOnly --declaration --outDir dist",
 		"dev": "tsdown --watch",
 		"prepublishOnly": "bun run build",
 		"test:dist": "node test-dist.js",
@@ -60,6 +60,7 @@
 		"typescript": "^5"
 	},
 	"dependencies": {
-		"@expo/sudo-prompt": "^9.3.2"
+		"@expo/sudo-prompt": "^9.3.2",
+		"tar": "^7.4.3"
 	}
 }
