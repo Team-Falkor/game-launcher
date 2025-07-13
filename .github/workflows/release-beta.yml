@@ -1,0 +1,61 @@
+name: Build, Release and Publish (Beta)
+
+on:
+  push:
+    branches:
+      - beta
+    paths:
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build-and-publish-beta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build package
+        env:
+          NODE_ENV: production
+        run: bun run build:prod
+
+      - name: Extract version from package.json
+        id: get_version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          echo "current-version=$version" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Beta Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.current-version }}-beta
+          name: Beta Release v${{ steps.get_version.outputs.current-version }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NPM (beta tag)
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          access: public
+          tag: beta
+          

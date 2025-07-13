@@ -18,6 +18,7 @@ This directory contains practical examples demonstrating how to use the Game Lau
 ### Platform-Specific Examples
 - [**Windows Games**](windows-games.md) - Windows-specific implementations
 - [**Linux Games**](linux-games.md) - Linux gaming with Wine and native games
+- [**Proton Integration**](proton-integration.md) - Windows game compatibility on Linux using Proton
 - [**macOS Games**](macos-games.md) - macOS game management
 
 ## 🚀 Quick Start
@@ -42,6 +43,7 @@ examples/
 ├── playtime-tracker.md       # Session tracking
 ├── windows-games.md          # Windows-specific examples
 ├── linux-games.md            # Linux gaming examples
+├── proton-integration.md     # Proton compatibility layer
 └── macos-games.md            # macOS examples
 ```
 

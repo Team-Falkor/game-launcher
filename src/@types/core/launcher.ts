@@ -1,3 +1,5 @@
+import type { ProtonManager } from "../../proton/core/ProtonManager";
+import type { ProtonVariant } from "../proton";
 import type { GameProcessEvents } from "./events";
 import type { LogContext, LogEntry, LoggerConfig } from "./logging";
 import type { GameProcessInfo } from "./process";
@@ -32,6 +34,24 @@ export interface GameLauncherOptions {
 	monitoringInterval?: number | undefined;
 	/** Logging configuration */
 	logging?: LoggingOptions | undefined;
+	/** Proton configuration (Linux only) */
+	proton?: ProtonOptions | undefined;
+}
+
+/**
+ * Proton configuration options for Windows game compatibility on Linux
+ */
+export interface ProtonOptions {
+	/** Enable Proton support */
+	enabled?: boolean | undefined;
+	/** Auto-detect installed Proton builds */
+	autoDetect?: boolean | undefined;
+	/** Preferred Proton variant */
+	preferredVariant?: ProtonVariant | undefined;
+	/** Custom Proton installation path */
+	installPath?: string | undefined;
+	/** Default Proton version to use */
+	defaultVersion?: string | undefined;
 }
 
 /**
@@ -186,6 +206,24 @@ export interface LaunchGameOptions {
 	runAsAdmin?: boolean | undefined;
 	/** Additional metadata */
 	metadata?: Record<string, string | number | boolean | null> | undefined;
+	/** Proton-specific launch options (Linux only) */
+	proton?: ProtonLaunchOptions | undefined;
+}
+
+/**
+ * Proton-specific options for launching Windows games on Linux
+ */
+export interface ProtonLaunchOptions {
+	/** Enable Proton for this game launch */
+	enabled?: boolean | undefined;
+	/** Specific Proton variant to use */
+	variant?: ProtonVariant | undefined;
+	/** Specific Proton version to use */
+	version?: string | undefined;
+	/** Custom Proton arguments */
+	customArgs?: string[] | undefined;
+	/** Wine prefix path for this game */
+	winePrefix?: string | undefined;
 }
 
 export interface GameLauncherInterface {
@@ -194,6 +232,10 @@ export interface GameLauncherInterface {
 	isGameRunning(gameId: string): boolean;
 	getRunningGames(): string[];
 	getGameInfo(gameId: string): GameProcessInfo | null;
+	/** Get the ProtonManager instance (Linux only) */
+	getProtonManager(): ProtonManager | undefined;
+	/** Check if Proton is available and enabled */
+	isProtonAvailable(): boolean;
 	on<K extends keyof GameProcessEvents>(
 		event: K,
 		listener: GameProcessEvents[K],

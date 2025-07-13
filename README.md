@@ -20,6 +20,7 @@
 - 🎮 **Process Management** - Launch, monitor, and control game processes with precision
 - ⚡ **Event-Driven Architecture** - Real-time events for complete game lifecycle tracking
 - 🎯 **Steam Integration** - Built-in support for Steam games and platform detection
+- 🍷 **Proton Integration** - Native support for running Windows games on Linux via Proton
 - ⚙️ **Configuration Management** - Flexible, environment-aware configuration system
 - 📘 **TypeScript Support** - Full TypeScript definitions and IntelliSense support
 - 🛡️ **Error Handling** - Robust error handling and automatic recovery mechanisms
@@ -142,6 +143,7 @@ Explore our comprehensive documentation for detailed guides, examples, and API r
 - **[⏱️ Playtime Tracker](./docs/examples/playtime-tracker.md)** - Track and analyze playtime
 - **[📚 Game Library Manager](./docs/examples/game-library-manager.md)** - Comprehensive library management
 - **[🌐 Cross-Platform](./docs/examples/cross-platform.md)** - Platform compatibility handling
+- **[🍷 Proton Integration](./docs/examples/proton-integration.md)** - Running Windows games on Linux
 - **[⚙️ Configuration Management](./docs/examples/configuration-management.md)** - Advanced configuration patterns
 
 ## 🎯 Use Cases
@@ -176,7 +178,7 @@ Integrate games into larger applications, Discord bots, streaming platforms, or 
 
 - **Windows**: Registry game detection, Windows Store app support, UAC elevation
 - **macOS**: Info.plist parsing, Gatekeeper compatibility, Accessibility permissions
-- **Linux**: Desktop file parsing, Wayland/X11 detection, Flatpak/Snap support
+- **Linux**: Desktop file parsing, Wayland/X11 detection, Flatpak/Snap support, Proton integration for Windows games
 
 ## 🤝 Contributing
 

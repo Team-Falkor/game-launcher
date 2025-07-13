@@ -33,7 +33,7 @@ class InstallationProgressTracker {
 			this.handleStatusChange(event);
 		});
 
-		this.protonManager.onInstallProgress((event: DownloadProgressEvent) => {
+		this.protonManager.onDownloadProgress((event: DownloadProgressEvent) => {
 			this.handleProgress(event);
 		});
 
@@ -321,7 +321,7 @@ export async function customProgressDisplay(): Promise<void> {
 	};
 
 	// Custom progress handler with statistics
-	protonManager.onInstallProgress((event: DownloadProgressEvent) => {
+	protonManager.onDownloadProgress((event: DownloadProgressEvent) => {
 		// Track speed statistics
 		downloadStats.speedSamples.push(event.speed);
 		downloadStats.peakSpeed = Math.max(downloadStats.peakSpeed, event.speed);

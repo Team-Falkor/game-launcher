@@ -11,6 +11,8 @@ import type {
 import { initializeLogging } from "../logging";
 import { ConfigurableLogger } from "../logging/ConfigurableLogger";
 import { Logger } from "../logging/Logger";
+import { ProtonManager } from "../proton/core/ProtonManager";
+import { getPlatform } from "../utils/platform";
 import { GameEventEmitter } from "./EventEmitter";
 import { Game } from "./Game";
 import { ProcessManager } from "./ProcessManager";
@@ -20,6 +22,7 @@ export class GameLauncher implements GameLauncherInterface {
 	private processManager: ProcessManager;
 	private options: GameLauncherOptions;
 	private logger!: ILogger;
+	private protonManager?: ProtonManager;
 
 	constructor(options: GameLauncherOptions = {}) {
 		this.options = {
@@ -33,6 +36,9 @@ export class GameLauncher implements GameLauncherInterface {
 		this.initializeLogging();
 
 		this.eventEmitter = new GameEventEmitter();
+
+		// Initialize Proton manager on Linux if enabled
+		this.initializeProtonManager();
 
 		// Filter out undefined values for ProcessManager options
 		const processManagerOptions = {
@@ -56,7 +62,44 @@ export class GameLauncher implements GameLauncherInterface {
 			enableProcessMonitoring: this.options.enableProcessMonitoring,
 			monitoringInterval: this.options.monitoringInterval,
 			loggingEnabled: this.options.logging?.enabled ?? true,
+			protonEnabled: this.protonManager !== undefined,
 		});
+	}
+
+	/**
+	 * Initialize Proton manager if on Linux and enabled
+	 */
+	private initializeProtonManager(): void {
+		const platform = getPlatform();
+		const protonOptions = this.options.proton;
+
+		// Only initialize on Linux
+		if (platform !== "linux") {
+			this.logger?.debug?.("Proton not available on non-Linux platforms", {
+				platform,
+			});
+			return;
+		}
+
+		// Check if Proton is enabled
+		if (!protonOptions?.enabled) {
+			this.logger?.debug?.("Proton support disabled");
+			return;
+		}
+
+		try {
+			this.protonManager = new ProtonManager();
+
+			this.logger?.info?.("ProtonManager initialized", {
+				installPath: protonOptions.installPath,
+				autoDetect: protonOptions.autoDetect,
+				preferredVariant: protonOptions.preferredVariant,
+			});
+		} catch (error) {
+			this.logger?.error?.("Failed to initialize ProtonManager", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 	}
 
 	/**
@@ -155,6 +198,20 @@ export class GameLauncher implements GameLauncherInterface {
 		this.updateLoggingConfig({ enabled });
 	}
 
+	/**
+	 * Get the ProtonManager instance (Linux only)
+	 */
+	getProtonManager(): ProtonManager | undefined {
+		return this.protonManager;
+	}
+
+	/**
+	 * Check if Proton is available and enabled
+	 */
+	isProtonAvailable(): boolean {
+		return this.protonManager !== undefined;
+	}
+
 	async launchGame(options: LaunchGameOptions): Promise<Game> {
 		const {
 			gameId,
@@ -174,6 +231,11 @@ export class GameLauncher implements GameLauncherInterface {
 		const maxGames = this.options.maxConcurrentGames ?? 10;
 		if (runningGames.length >= maxGames) {
 			throw new Error(`Maximum concurrent games limit reached (${maxGames})`);
+		}
+
+		// Check if Proton launch is requested
+		if (options.proton?.enabled && this.protonManager) {
+			return this.launchGameWithProton(options);
 		}
 
 		// Filter out undefined values for process options
@@ -204,6 +266,133 @@ export class GameLauncher implements GameLauncherInterface {
 			processOptions,
 		);
 		return new Game(gameId, this.eventEmitter, this.processManager);
+	}
+
+	/**
+	 * Launch a game using Proton (Linux only)
+	 */
+	private async launchGameWithProton(
+		options: LaunchGameOptions,
+	): Promise<Game> {
+		if (!this.protonManager) {
+			throw new Error("Proton is not available or not initialized");
+		}
+
+		const {
+			gameId,
+			executable,
+			args = [],
+			workingDirectory,
+			environment,
+			proton,
+		} = options;
+
+		this.logger.info("Launching game with Proton", {
+			gameId,
+			executable,
+			protonVariant: proton?.variant,
+			protonVersion: proton?.version,
+		});
+
+		try {
+			// Get Proton variant and version
+			const variant =
+				proton?.variant || this.options.proton?.preferredVariant || "proton-ge";
+			const version = proton?.version || this.options.proton?.defaultVersion;
+
+			// Get available Proton versions if version not specified
+			let selectedVersion = version;
+			if (!selectedVersion) {
+				const availableVersions =
+					await this.protonManager.listAvailableProtonVersions();
+				const variantVersions = availableVersions[variant];
+				if (!variantVersions || variantVersions.length === 0) {
+					throw new Error(`No ${variant} versions available`);
+				}
+				// Use the first installed version, or the latest available
+				const installedVersion = variantVersions.find((v) => v.installed);
+				selectedVersion =
+					installedVersion?.version || variantVersions[0]?.version;
+			}
+
+			// Launch the game with Proton
+			const protonArgs = [
+				"run",
+				executable,
+				...(proton?.customArgs || []),
+				...args,
+			];
+
+			// Get installed Proton builds to find the executable path
+			const installedBuilds = await this.protonManager.getInstalledProtonBuilds();
+			const protonBuild = installedBuilds.find(
+				(build) => build.variant === variant && build.version === selectedVersion,
+			);
+			if (!protonBuild) {
+				throw new Error(
+					`Proton ${variant} ${selectedVersion} not found or not installed`,
+				);
+			}
+			const protonPath = `${protonBuild.installPath}/proton`;
+
+			// Set up environment variables for Proton
+			const protonEnvironment = {
+				...(this.options.defaultEnvironment || {}),
+				...(environment || {}),
+				// Add Wine prefix if specified
+				...(proton?.winePrefix && { WINEPREFIX: proton.winePrefix }),
+				// Add common Proton environment variables
+				PROTON_USE_WINED3D: "1",
+				PROTON_NO_D3D11: "0",
+				PROTON_NO_D3D12: "0",
+			};
+
+			// Filter out undefined values for process options
+			const processOptions = {
+				...(workingDirectory !== undefined && { workingDirectory }),
+				...(this.options.defaultWorkingDirectory !== undefined &&
+					workingDirectory === undefined && {
+						workingDirectory: this.options.defaultWorkingDirectory,
+					}),
+				environment: protonEnvironment,
+				...(options.captureOutput !== undefined && {
+					captureOutput: options.captureOutput,
+				}),
+				...(options.timeout !== undefined && { timeout: options.timeout }),
+				...(options.runAsAdmin !== undefined && {
+					runAsAdmin: options.runAsAdmin,
+				}),
+				...(options.metadata !== undefined && {
+					metadata: {
+						...options.metadata,
+						protonVariant: variant,
+						protonVersion: selectedVersion || 'unknown',
+					},
+				}),
+			};
+
+			await this.processManager.startProcess(
+				gameId,
+				protonPath,
+				protonArgs,
+				processOptions,
+			);
+
+			this.logger.info("Game launched successfully with Proton", {
+				gameId,
+				protonPath,
+				variant,
+				version: selectedVersion,
+			});
+
+			return new Game(gameId, this.eventEmitter, this.processManager);
+		} catch (error) {
+			this.logger.error("Failed to launch game with Proton", {
+				gameId,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
 	}
 
 	async closeGame(gameId: string, force = false): Promise<boolean> {
