@@ -22,7 +22,7 @@ launcher.on("launched", (game) => {
     gameId: "vampireSurvivors",    
     executable: "C:\\Games\\Vampire Survivors\\VampireSurvivors.exe",
     runAsAdmin: true,
-    args: ["--fullscreen"]
+    args: ["--fullscreen"],
   })
   
   game.on("closed", (data) => {
