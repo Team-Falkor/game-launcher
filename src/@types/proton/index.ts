@@ -93,6 +93,15 @@ export interface ProtonRemoveResult {
 	error?: string;
 }
 
+export interface ExtractionProgressEvent {
+	variant: string;
+	version: string;
+	entriesProcessed: number;
+	totalEntries: number;
+	percentage: number;
+	currentFile: string;
+}
+
 export type ProtonVariant =
 	| "proton-ge"
 	| "proton-experimental"

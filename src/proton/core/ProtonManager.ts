@@ -446,6 +446,15 @@ export class ProtonManager {
 	}
 
 	/**
+	 * Convenience method to add event listeners for extraction progress
+	 */
+	onExtractionProgress(
+		listener: (event: import('../../@types').ExtractionProgressEvent) => void,
+	): void {
+		this.protonInstaller.on('extraction-progress', listener);
+	}
+
+	/**
 	 * Convenience method to add event listeners for installation completion
 	 */
 	onInstallComplete(

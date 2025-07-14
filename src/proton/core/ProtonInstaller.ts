@@ -3,8 +3,9 @@ import { EventEmitter } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { extract } from "tar";
+import { extract, list } from "tar";
 import type {
+	ExtractionProgressEvent,
 	ProtonInstallOptions,
 	ProtonInstallResult,
 	ProtonRemoveOptions,
@@ -60,6 +61,7 @@ export interface BuildProgressEvent {
  * Events:
  * - 'download-progress': Emitted during download with progress information
  * - 'download-status': Emitted when download status changes
+ * - 'extraction-progress': Emitted during archive extraction with progress information
  * - 'build-progress': Emitted during build steps
  * - 'install-progress': Emitted during installation steps
  * - 'install-complete': Emitted when installation completes
@@ -257,7 +259,12 @@ export class ProtonInstaller extends EventEmitter {
 				message: "Extracting archive...",
 			} as DownloadStatusEvent);
 
-			await this.extractArchive(archivePath, installPath);
+			await this.extractArchive(
+				archivePath,
+				installPath,
+				options.variant,
+				options.version,
+			);
 
 			// Check if this is source code that needs building
 			const needsBuild = await this.detectSourceCode(installPath);
@@ -423,20 +430,51 @@ export class ProtonInstaller extends EventEmitter {
 	}
 
 	/**
-	 * Extracts a tar.gz archive
+	 * Extracts a tar.gz archive with progress tracking
 	 */
 	private async extractArchive(
 		archivePath: string,
 		installPath: string,
+		variant?: string,
+		version?: string,
 	): Promise<void> {
 		// Create parent directory
 		await fs.mkdir(path.dirname(installPath), { recursive: true });
 
-		// Extract with tar
+		// First, count total entries in the archive for progress tracking
+		let totalEntries = 0;
+		await list({
+			file: archivePath,
+			onReadEntry: () => {
+				totalEntries++;
+			},
+		});
+
+		// Now extract with progress tracking
+		let entriesProcessed = 0;
 		await extract({
 			file: archivePath,
 			cwd: path.dirname(installPath),
 			strip: 1, // Remove the top-level directory from the archive
+			onReadEntry: (entry) => {
+				entriesProcessed++;
+				const percentage =
+					totalEntries > 0
+						? Math.round((entriesProcessed / totalEntries) * 100)
+						: 0;
+
+				// Emit extraction progress event
+				if (variant && version) {
+					this.emit("extraction-progress", {
+						variant,
+						version,
+						entriesProcessed,
+						totalEntries,
+						percentage,
+						currentFile: entry.path || "unknown",
+					} as ExtractionProgressEvent);
+				}
+			},
 		});
 
 		// Rename extracted directory to final name if needed
@@ -667,7 +705,6 @@ export class ProtonInstaller extends EventEmitter {
 		}
 
 		return new Promise((resolve, reject) => {
-
 			this.emit("build-progress", {
 				variant: options.variant,
 				version: options.version,

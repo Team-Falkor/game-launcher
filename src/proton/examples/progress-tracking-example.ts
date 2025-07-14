@@ -1,14 +1,14 @@
 /**
- * Advanced example demonstrating download progress tracking and event handling
+ * Advanced example demonstrating download and extraction progress tracking with event handling
  *
  * This example shows different approaches to:
- * - Real-time progress bars with detailed statistics
- * - Event-driven installation workflows
+ * - Real-time progress bars with detailed statistics for downloads and extraction
+ * - Event-driven installation workflows with file-by-file extraction tracking
  * - Error handling and retry mechanisms
  * - Batch installations with progress aggregation
  */
 
-import type { ProtonVariant } from "../../@types";
+import type { ExtractionProgressEvent, ProtonVariant } from "../../@types";
 import { ProtonManager } from "../core";
 import type {
 	DownloadProgressEvent,
@@ -36,6 +36,12 @@ class InstallationProgressTracker {
 		this.protonManager.onDownloadProgress((event: DownloadProgressEvent) => {
 			this.handleProgress(event);
 		});
+
+		this.protonManager.onExtractionProgress(
+			(event: ExtractionProgressEvent) => {
+				this.handleExtractionProgress(event);
+			},
+		);
 
 		this.protonManager.onInstallComplete((event) => {
 			this.handleComplete(event);
@@ -112,6 +118,30 @@ class InstallationProgressTracker {
 		);
 	}
 
+	private handleExtractionProgress(event: ExtractionProgressEvent): void {
+		// Create a detailed progress bar for extraction
+		const barLength = 30;
+		const filledLength = Math.floor((event.percentage / 100) * barLength);
+		const progressBar =
+			"█".repeat(filledLength) + "░".repeat(barLength - filledLength);
+
+		// Truncate filename if too long
+		const fileName =
+			event.currentFile.length > 35
+				? `...${event.currentFile.slice(-32)}`
+				: event.currentFile;
+
+		// Batch progress if applicable
+		const batchProgress =
+			this.totalInstallations > 1
+				? ` | Batch: ${this.completedInstallations + 1}/${this.totalInstallations}`
+				: "";
+
+		process.stdout.write(
+			`\r📦 [${progressBar}] ${event.percentage.toFixed(1)}% | ${event.entriesProcessed}/${event.totalEntries} files | ${fileName}${batchProgress}`,
+		);
+	}
+
 	private handleComplete(event: {
 		variant: ProtonVariant;
 		version: string;
@@ -171,19 +201,19 @@ export async function singleInstallationWithProgress(): Promise<void> {
 	const tracker = new InstallationProgressTracker(protonManager);
 
 	try {
-			const result = await protonManager.installProtonVersion({
-				variant: "proton-ge",
-				version: "GE-Proton8-32",
-				force: false,
-			});
+		const result = await protonManager.installProtonVersion({
+			variant: "proton-ge",
+			version: "GE-Proton8-32",
+			force: false,
+		});
 
-			if (result.success) {
-				console.log(`\n✅ Installation completed successfully`);
-				console.log(`📁 Installation path: ${result.installPath}`);
-			} else {
-				console.log(`\n❌ Installation failed: ${result.error}`);
-			}
-		} finally {
+		if (result.success) {
+			console.log(`\n✅ Installation completed successfully`);
+			console.log(`📁 Installation path: ${result.installPath}`);
+		} else {
+			console.log(`\n❌ Installation failed: ${result.error}`);
+		}
+	} finally {
 		tracker.cleanup();
 	}
 }

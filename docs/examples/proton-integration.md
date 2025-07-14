@@ -141,8 +141,27 @@ async function protonExample() {
     });
     console.log(`Game 2 launched: ${game2.id}`);
 
-    // Example 3: Install a new Proton version
+    // Example 3: Install a new Proton version with progress tracking
     console.log('\nInstalling new Proton version...');
+    
+    // Listen to installation progress events
+    protonManager.onDownloadProgress((progress) => {
+      console.log(`Download: ${progress.percentage.toFixed(1)}% (${progress.downloadedBytes}/${progress.totalBytes} bytes)`);
+    });
+
+    protonManager.onExtractionProgress((progress) => {
+      console.log(`Extraction: ${progress.percentage.toFixed(1)}% (${progress.entriesProcessed}/${progress.totalEntries} files)`);
+      console.log(`Current file: ${progress.currentFile}`);
+    });
+
+    protonManager.onInstallComplete((result) => {
+      console.log(`Installation completed: ${result.variant} ${result.version}`);
+    });
+
+    protonManager.onInstallError((error) => {
+      console.error(`Installation failed: ${error.message}`);
+    });
+    
     const installResult = await protonManager.installProtonVersion({
       variant: 'proton-ge',
       version: '8.0-5',
@@ -219,6 +238,54 @@ interface ProtonLaunchOptions {
   /** Wine prefix path for this game */
   winePrefix?: string;
 }
+```
+
+## Installation Progress Events
+
+The Proton installer emits detailed progress events during installation:
+
+### Download Progress Events
+
+```typescript
+protonManager.onDownloadProgress((progress) => {
+  console.log(`Download Progress:`);
+  console.log(`  Variant: ${progress.variant}`);
+  console.log(`  Version: ${progress.version}`);
+  console.log(`  Progress: ${progress.percentage.toFixed(1)}%`);
+  console.log(`  Downloaded: ${progress.downloadedBytes} / ${progress.totalBytes} bytes`);
+  console.log(`  Speed: ${progress.speed} bytes/s`);
+});
+```
+
+### Extraction Progress Events
+
+```typescript
+protonManager.onExtractionProgress((progress) => {
+  console.log(`Extraction Progress:`);
+  console.log(`  Variant: ${progress.variant}`);
+  console.log(`  Version: ${progress.version}`);
+  console.log(`  Progress: ${progress.percentage.toFixed(1)}%`);
+  console.log(`  Files: ${progress.entriesProcessed} / ${progress.totalEntries}`);
+  console.log(`  Current: ${progress.currentFile}`);
+});
+```
+
+### Installation Status Events
+
+```typescript
+protonManager.onInstallComplete((result) => {
+  console.log(`✅ Installation completed successfully:`);
+  console.log(`  Variant: ${result.variant}`);
+  console.log(`  Version: ${result.version}`);
+  console.log(`  Install Path: ${result.installPath}`);
+});
+
+protonManager.onInstallError((error) => {
+  console.error(`❌ Installation failed:`);
+  console.error(`  Error: ${error.message}`);
+  console.error(`  Variant: ${error.variant}`);
+  console.error(`  Version: ${error.version}`);
+});
 ```
 
 ## Advanced Usage

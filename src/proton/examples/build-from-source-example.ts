@@ -92,11 +92,12 @@ export async function demonstrateSourceBuild(): Promise<void> {
 			buildOptions,
 		});
 
+		console.log(`📁 Installation path: ${result?.installPath}`);
+
 		if (result.success) {
 			console.log(
 				`🎉 Successfully built and installed ${result.variant} ${result.version}`,
 			);
-			console.log(`📁 Installation path: ${result.installPath}`);
 		} else {
 			console.error(`❌ Installation failed: ${result.error}`);
 		}
