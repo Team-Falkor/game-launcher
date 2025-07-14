@@ -117,7 +117,7 @@ protonManager.onInstallStatus((event) => {
 interface BuildProgressEvent {
   variant: ProtonVariant;
   version: string;
-  step: "configure" | "make" | "install";
+  step: "configure" | "make" | "install" | "error";
   message: string;
 }
 ```
