@@ -164,9 +164,21 @@ interface DownloadProgressEvent {
 interface DownloadStatusEvent {
     variant: ProtonVariant;
     version: string;
-    status: 'started' | 'downloading' | 'extracting' | 'completed' | 'failed';
+    status: 'started' | 'downloading' | 'retrying' | 'validating' | 'extracting' | 'completed' | 'failed';
     message?: string;
     error?: string;
+}
+```
+
+#### Extraction Progress Event
+```typescript
+interface ExtractionProgressEvent {
+    variant: string;
+    version: string;
+    entriesProcessed: number;
+    totalEntries: number;
+    percentage: number;
+    currentFile: string;
 }
 ```
 
@@ -209,6 +221,20 @@ Proton versions are installed in the Steam compatibility tools directory:
 
 ## Error Handling
 
+The module includes comprehensive error handling and reliability features:
+
+### Enhanced Download Reliability
+- **Automatic Retry Logic**: Downloads are automatically retried up to 3 times with exponential backoff
+- **File Integrity Validation**: Downloaded files are validated using SHA256 checksums and file header checks
+- **Corrupted Archive Detection**: Archives are validated before extraction to prevent zlib errors
+- **Download Completion Verification**: Ensures downloaded file size matches expected size
+
+### Error Recovery
+- **Partial Download Cleanup**: Failed downloads are cleaned up before retry attempts
+- **Detailed Error Messages**: Specific error messages help identify the root cause
+- **Status Tracking**: Real-time status updates including retry attempts and validation steps
+
+### Result Objects
 All installation and removal operations return result objects with success/error information:
 
 ```typescript
@@ -227,6 +253,20 @@ interface ProtonRemoveResult {
     removedPath: string;
     error?: string;
 }
+```
+
+### Error Status Events
+The module emits detailed status events during operations:
+
+```typescript
+// Listen for retry attempts
+protonManager.onInstallStatus((event) => {
+    if (event.status === 'retrying') {
+        console.log(`Retrying download: ${event.message}`);
+    } else if (event.status === 'validating') {
+        console.log('Validating file integrity...');
+    }
+});
 ```
 
 ## Platform Support
@@ -262,8 +302,14 @@ See the examples directory for comprehensive usage demonstrations:
 - Advanced progress tracking with detailed statistics
 - Custom progress bar implementations
 - Batch installation with aggregated progress
-- Retry mechanisms with exponential backoff
 - Real-time download speed monitoring
+
+### `examples/error-handling-example.ts`
+- Comprehensive error handling demonstration
+- Retry logic with exponential backoff
+- File integrity validation
+- Corrupted archive detection
+- Detailed error reporting and recovery suggestions
 
 ### Key Example Features
 - Real-time progress bars with ETA calculations

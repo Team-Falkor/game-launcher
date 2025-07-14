@@ -398,7 +398,7 @@ export class ProtonManager {
 		const build = installedBuilds.find(
 			(b) => b.variant === variant && b.version === version,
 		);
-		
+
 		if (build) {
 			return {
 				installed: true,
@@ -406,7 +406,7 @@ export class ProtonManager {
 				installSource: build.installSource,
 			};
 		}
-		
+
 		return { installed: false };
 	}
 
@@ -422,54 +422,64 @@ export class ProtonManager {
 	 * Convenience method to add event listeners for download progress
 	 */
 	onDownloadProgress(
-		listener: (event: import('./ProtonInstaller').DownloadProgressEvent) => void,
+		listener: (
+			event: import("./ProtonInstaller").DownloadProgressEvent,
+		) => void,
 	): void {
-		this.protonInstaller.on('download-progress', listener);
+		this.protonInstaller.on("download-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation status changes
 	 */
 	onInstallStatus(
-		listener: (event: import('./ProtonInstaller').DownloadStatusEvent) => void,
+		listener: (event: import("./ProtonInstaller").DownloadStatusEvent) => void,
 	): void {
-		this.protonInstaller.on('download-status', listener);
+		this.protonInstaller.on("download-status", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for build progress
 	 */
 	onBuildProgress(
-		listener: (event: import('./ProtonInstaller').BuildProgressEvent) => void,
+		listener: (event: import("./ProtonInstaller").BuildProgressEvent) => void,
 	): void {
-		this.protonInstaller.on('build-progress', listener);
+		this.protonInstaller.on("build-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for extraction progress
 	 */
 	onExtractionProgress(
-		listener: (event: import('../../@types').ExtractionProgressEvent) => void,
+		listener: (event: import("../../@types").ExtractionProgressEvent) => void,
 	): void {
-		this.protonInstaller.on('extraction-progress', listener);
+		this.protonInstaller.on("extraction-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation completion
 	 */
 	onInstallComplete(
-		listener: (event: { variant: ProtonVariant; version: string; installPath: string }) => void,
+		listener: (event: {
+			variant: ProtonVariant;
+			version: string;
+			installPath: string;
+		}) => void,
 	): void {
-		this.protonInstaller.on('install-complete', listener);
+		this.protonInstaller.on("install-complete", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation errors
 	 */
 	onInstallError(
-		listener: (event: { variant: ProtonVariant; version: string; error: string }) => void,
+		listener: (event: {
+			variant: ProtonVariant;
+			version: string;
+			error: string;
+		}) => void,
 	): void {
-		this.protonInstaller.on('install-error', listener);
+		this.protonInstaller.on("install-error", listener);
 	}
 
 	/**

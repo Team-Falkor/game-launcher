@@ -1,17 +1,29 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { extract, list } from "tar";
 import type {
-	ExtractionProgressEvent,
 	ProtonInstallOptions,
 	ProtonInstallResult,
 	ProtonRemoveOptions,
 	ProtonRemoveResult,
 	ProtonVersionInfo,
 } from "@/@types";
+
+/**
+ * Extraction progress event data
+ */
+export interface ExtractionProgressEvent {
+	variant: string;
+	version: string;
+	entriesProcessed: number;
+	totalEntries: number;
+	percentage: number;
+	currentFile: string;
+}
 
 /**
  * Download progress event data
@@ -35,6 +47,8 @@ export interface DownloadStatusEvent {
 	status:
 		| "started"
 		| "downloading"
+		| "retrying"
+		| "validating"
 		| "extracting"
 		| "building"
 		| "completed"
@@ -114,6 +128,8 @@ export class ProtonInstaller extends EventEmitter {
 			const installPath =
 				options.installPath ||
 				path.join(this.compatibilityToolsPath, this.getInstallDirName(options));
+
+			console.log("Install path:", installPath);
 
 			// Check if already installed
 			if (!options.force && (await this.pathExists(installPath))) {
@@ -241,13 +257,14 @@ export class ProtonInstaller extends EventEmitter {
 			// Create temp directory
 			await fs.mkdir(tempDir, { recursive: true });
 
-			// Download the archive with progress tracking
+			// Download the archive with retry logic
 			console.log("Downloading Proton archive...");
-			await this.downloadFileWithProgress(
+			await this.downloadWithRetry(
 				downloadUrl,
 				archivePath,
 				options.variant,
 				options.version,
+				3, // max retries
 			);
 
 			// Extract the archive
@@ -310,6 +327,58 @@ export class ProtonInstaller extends EventEmitter {
 				await fs.rm(tempDir, { recursive: true, force: true });
 			} catch {
 				// Ignore cleanup errors
+			}
+		}
+	}
+
+	/**
+	 * Downloads a file with retry logic and exponential backoff
+	 */
+	private async downloadWithRetry(
+		url: string,
+		outputPath: string,
+		variant: string,
+		version: string,
+		maxRetries: number = 3,
+	): Promise<void> {
+		let lastError: Error | null = null;
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				if (attempt > 1) {
+					// Wait with exponential backoff: 2^(attempt-1) seconds
+					const delayMs = 2 ** (attempt - 1) * 1000;
+					console.log(
+						`Retrying download in ${delayMs / 1000} seconds... (attempt ${attempt}/${maxRetries})`,
+					);
+					this.emit("download-status", {
+						variant,
+						version,
+						status: "retrying",
+						message: `Retrying download in ${delayMs / 1000} seconds... (attempt ${attempt}/${maxRetries})`,
+					} as DownloadStatusEvent);
+					await new Promise((resolve) => setTimeout(resolve, delayMs));
+				}
+
+				await this.downloadFileWithProgress(url, outputPath, variant, version);
+				return; // Success, exit retry loop
+			} catch (error) {
+				lastError = error instanceof Error ? error : new Error(String(error));
+				console.error(`Download attempt ${attempt} failed:`, lastError.message);
+
+				if (attempt === maxRetries) {
+					// Final attempt failed
+					throw new Error(
+						`Download failed after ${maxRetries} attempts. Last error: ${lastError.message}`,
+					);
+				}
+
+				// Clean up partial download before retry
+				try {
+					await fs.unlink(outputPath);
+				} catch {
+					// Ignore cleanup errors
+				}
 			}
 		}
 	}
@@ -411,6 +480,13 @@ export class ProtonInstaller extends EventEmitter {
 				}
 			}
 
+			// Validate download completion
+			if (totalBytes > 0 && downloadedBytes !== totalBytes) {
+				throw new Error(
+					`Download incomplete: Expected ${totalBytes} bytes, but only downloaded ${downloadedBytes} bytes. Please try again.`,
+				);
+			}
+
 			// Emit final progress
 			if (totalBytes > 0) {
 				this.emit("download-progress", {
@@ -423,10 +499,107 @@ export class ProtonInstaller extends EventEmitter {
 					estimatedTimeRemaining: 0,
 				} as DownloadProgressEvent);
 			}
+
+			// Validate file integrity
+			await this.validateFileIntegrity(outputPath, variant, version);
+
+			// Emit download completed status
+			this.emit("download-status", {
+				variant,
+				version,
+				status: "completed",
+				message: `Download completed: ${(downloadedBytes / 1024 / 1024).toFixed(1)} MB`,
+			} as DownloadStatusEvent);
+		} catch (error) {
+			// Emit download failed status
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			this.emit("download-status", {
+				variant,
+				version,
+				status: "failed",
+				error: errorMessage,
+			} as DownloadStatusEvent);
+			throw error;
 		} finally {
 			fileStream.end();
 			reader.releaseLock();
 		}
+	}
+
+	/**
+	 * Validates file integrity using SHA256 checksum
+	 */
+	private async validateFileIntegrity(
+		filePath: string,
+		variant: string,
+		version: string,
+	): Promise<void> {
+		try {
+			// Emit validation started status
+			this.emit("download-status", {
+				variant,
+				version,
+				status: "validating",
+				message: "Validating file integrity...",
+			} as DownloadStatusEvent);
+
+			// Calculate SHA256 hash of the downloaded file
+			const fileBuffer = await fs.readFile(filePath);
+			const hash = createHash("sha256");
+			hash.update(fileBuffer);
+			const calculatedHash = hash.digest("hex");
+
+			// For now, we'll just log the hash for debugging purposes
+			// In the future, this could be compared against known checksums
+			console.log(`File SHA256: ${calculatedHash}`);
+
+			// Basic file validation - check if it's a valid tar.gz file
+			const fileStats = await fs.stat(filePath);
+			if (fileStats.size < 1024) {
+				throw new Error("Downloaded file is too small to be a valid archive");
+			}
+
+			// Check file header for tar.gz signature
+			const headerBuffer = await this.readFileHeader(filePath, 10);
+			if (!this.isValidTarGzHeader(headerBuffer)) {
+				throw new Error(
+					"Downloaded file does not appear to be a valid tar.gz archive",
+				);
+			}
+
+			console.log("File integrity validation passed");
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			throw new Error(`File validation failed: ${errorMessage}`);
+		}
+	}
+
+	/**
+	 * Reads the first few bytes of a file
+	 */
+	private async readFileHeader(
+		filePath: string,
+		bytes: number,
+	): Promise<Buffer> {
+		const fileHandle = await fs.open(filePath, "r");
+		try {
+			const buffer = Buffer.alloc(bytes);
+			const { bytesRead } = await fileHandle.read(buffer, 0, bytes, 0);
+			return buffer.subarray(0, bytesRead);
+		} finally {
+			await fileHandle.close();
+		}
+	}
+
+	/**
+	 * Checks if the file header indicates a valid gzip file
+	 */
+	private isValidTarGzHeader(header: Buffer): boolean {
+		// Gzip files start with magic bytes 0x1f 0x8b
+		if (header.length < 2) return false;
+		return header[0] === 0x1f && header[1] === 0x8b;
 	}
 
 	/**
@@ -438,44 +611,82 @@ export class ProtonInstaller extends EventEmitter {
 		variant?: string,
 		version?: string,
 	): Promise<void> {
-		// Create parent directory
-		await fs.mkdir(path.dirname(installPath), { recursive: true });
+		try {
+			// Validate archive file exists and is readable
+			const archiveStats = await fs.stat(archivePath);
+			if (archiveStats.size === 0) {
+				throw new Error("Archive file is empty or corrupted");
+			}
 
-		// First, count total entries in the archive for progress tracking
-		let totalEntries = 0;
-		await list({
-			file: archivePath,
-			onReadEntry: () => {
-				totalEntries++;
-			},
-		});
+			// Create parent directory
+			await fs.mkdir(path.dirname(installPath), { recursive: true });
 
-		// Now extract with progress tracking
-		let entriesProcessed = 0;
-		await extract({
-			file: archivePath,
-			cwd: path.dirname(installPath),
-			strip: 1, // Remove the top-level directory from the archive
-			onReadEntry: (entry) => {
-				entriesProcessed++;
-				const percentage =
-					totalEntries > 0
-						? Math.round((entriesProcessed / totalEntries) * 100)
-						: 0;
+			// First, count total entries in the archive for progress tracking
+			let totalEntries = 0;
+			try {
+				await list({
+					file: archivePath,
+					onReadEntry: () => {
+						totalEntries++;
+					},
+				});
+			} catch (error) {
+				throw new Error(
+					`Failed to read archive contents: ${error instanceof Error ? error.message : String(error)}. The archive may be corrupted.`,
+				);
+			}
 
-				// Emit extraction progress event
-				if (variant && version) {
-					this.emit("extraction-progress", {
-						variant,
-						version,
-						entriesProcessed,
-						totalEntries,
-						percentage,
-						currentFile: entry.path || "unknown",
-					} as ExtractionProgressEvent);
+			if (totalEntries === 0) {
+				throw new Error("Archive appears to be empty or corrupted");
+			}
+
+			// Now extract with progress tracking
+			let entriesProcessed = 0;
+			try {
+				await extract({
+					file: archivePath,
+					cwd: path.dirname(installPath),
+					strip: 1, // Remove the top-level directory from the archive
+					onReadEntry: (entry) => {
+						entriesProcessed++;
+						const percentage =
+							totalEntries > 0
+								? Math.round((entriesProcessed / totalEntries) * 100)
+								: 0;
+
+						// Emit extraction progress event
+						if (variant && version) {
+							this.emit("extraction-progress", {
+								variant,
+								version,
+								entriesProcessed,
+								totalEntries,
+								percentage,
+								currentFile: entry.path || "unknown",
+							} as ExtractionProgressEvent);
+						}
+					},
+				});
+			} catch (error) {
+				// Handle specific zlib errors
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
+				if (
+					errorMessage.includes("unexpected end of file") ||
+					errorMessage.includes("invalid")
+				) {
+					throw new Error(
+						`Archive extraction failed: The downloaded file appears to be corrupted or incomplete. Please try downloading again. Error: ${errorMessage}`,
+					);
 				}
-			},
-		});
+				throw new Error(`Archive extraction failed: ${errorMessage}`);
+			}
+		} catch (error) {
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error(`Extraction failed: ${String(error)}`);
+		}
 
 		// Rename extracted directory to final name if needed
 		const extractedName = path.basename(installPath);

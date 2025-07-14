@@ -114,7 +114,7 @@ async function protonIntegrationExample() {
 				
 				// Set up progress event listeners
 				protonManager.onDownloadProgress((progress) => {
-					console.log(`📥 Download: ${progress.percentage.toFixed(1)}% (${progress.downloadedBytes}/${progress.totalBytes} bytes)`);
+					console.log(`📥 Download: ${progress.percentage.toFixed(1)}% (${progress.bytesDownloaded}/${progress.totalBytes} bytes)`);
 				});
 				
 				protonManager.onExtractionProgress((progress) => {
@@ -129,7 +129,7 @@ async function protonIntegrationExample() {
 				});
 				
 				protonManager.onInstallError((error) => {
-					console.error(`❌ Installation failed: ${error.message}`);
+					console.error(`❌ Installation failed: ${error.error}`);
 				});
 				
 				try {
