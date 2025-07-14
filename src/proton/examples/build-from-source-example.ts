@@ -119,6 +119,7 @@ export async function demonstrateSourceBuild(): Promise<void> {
 			console.log(
 				`🎉 Successfully built and installed ${result2.variant} ${result2.version}`,
 			);
+			console.log(`📁 Installation path: ${result2.installPath}`);
 		} else {
 			console.error(`❌ Installation failed: ${result2.error}`);
 		}
@@ -140,6 +141,7 @@ export async function demonstrateSourceBuild(): Promise<void> {
 			console.log(
 				`🎉 Successfully installed pre-built ${result3.variant} ${result3.version}`,
 			);
+			console.log(`📁 Installation path: ${result3.installPath}`);
 		} else {
 			console.error(`❌ Installation failed: ${result3.error}`);
 		}

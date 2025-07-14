@@ -109,6 +109,7 @@ export async function demonstrateProtonInstallation(): Promise<void> {
 		console.log(
 			`✅ Successfully installed latest ${latestResult.variant}: ${latestResult.version}`,
 		);
+		console.log(`📁 Installation path: ${latestResult.installPath}`);
 	} else {
 		console.log(`❌ Failed to install latest version: ${latestResult.error}`);
 	}
@@ -170,6 +171,7 @@ export async function batchInstallExample(): Promise<void> {
 
 		if (result.success) {
 			console.log(`✅ ${variant} ${version} installed successfully`);
+			console.log(`📁 Installation path: ${result.installPath}`);
 		} else {
 			console.log(
 				`❌ ${variant} ${version} installation failed: ${result.error}`,

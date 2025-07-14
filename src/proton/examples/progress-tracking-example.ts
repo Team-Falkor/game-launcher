@@ -171,16 +171,19 @@ export async function singleInstallationWithProgress(): Promise<void> {
 	const tracker = new InstallationProgressTracker(protonManager);
 
 	try {
-		const result = await protonManager.installProtonVersion({
-			variant: "proton-ge",
-			version: "GE-Proton8-32",
-			force: false,
-		});
+			const result = await protonManager.installProtonVersion({
+				variant: "proton-ge",
+				version: "GE-Proton8-32",
+				force: false,
+			});
 
-		if (!result.success) {
-			console.log(`\n❌ Installation failed: ${result.error}`);
-		}
-	} finally {
+			if (result.success) {
+				console.log(`\n✅ Installation completed successfully`);
+				console.log(`📁 Installation path: ${result.installPath}`);
+			} else {
+				console.log(`\n❌ Installation failed: ${result.error}`);
+			}
+		} finally {
 		tracker.cleanup();
 	}
 }
@@ -282,6 +285,7 @@ export async function installationWithRetry(): Promise<void> {
 
 			if (result.success) {
 				console.log(`\n✅ Installation successful on attempt ${attempt}`);
+				console.log(`📁 Installation path: ${result.installPath}`);
 				break;
 			} else {
 				console.log(`\n❌ Attempt ${attempt} failed: ${result.error}`);
