@@ -1,5 +1,5 @@
 import { access, constants } from "node:fs/promises";
-import { platform, homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 import { SecurityEvent } from "@/@types";
 import { getSecurityAuditLogger } from "../logging";
@@ -22,7 +22,7 @@ function removeControlCharacters(input: string): string {
  * Expands tilde (~) to home directory path
  */
 function expandTildePath(path: string): string {
-	if (path.startsWith('~/') || path === '~') {
+	if (path.startsWith("~/") || path === "~") {
 		return path.replace(/^~/, homedir());
 	}
 	return path;
@@ -53,19 +53,20 @@ export async function validateExecutable(executable: string): Promise<void> {
 	// Perform file system validation
 	try {
 		const resolvedPath = resolve(expandedPath);
-		
+
 		// First check if file exists
 		await access(resolvedPath, constants.F_OK);
-		
+
 		// For cross-platform compatibility (e.g., .exe files on Linux with Proton),
 		// only check execute permissions on native executables
-		const isWindowsExeOnLinux = platform() !== 'win32' && resolvedPath.toLowerCase().endsWith('.exe');
-		
+		const isWindowsExeOnLinux =
+			platform() !== "win32" && resolvedPath.toLowerCase().endsWith(".exe");
+
 		if (!isWindowsExeOnLinux) {
 			// Check execute permissions for native executables
 			await access(resolvedPath, constants.X_OK);
 		}
-		
+
 		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, true, {
 			executable: resolvedPath,
 			crossPlatform: isWindowsExeOnLinux,
@@ -102,8 +103,6 @@ export namespace SecurityValidator {
 			});
 			throw new Error("Executable path must be a non-empty string");
 		}
-
-
 
 		// Remove null bytes and other dangerous characters
 		const sanitized = removeControlCharacters(path);
@@ -438,21 +437,26 @@ export namespace CommandSanitizer {
 		// Check for shell injection patterns (allow legitimate Windows command operators)
 		// First, check if the command contains properly quoted paths
 		const hasQuotedPaths = /["'][^"']*["']/.test(command);
-		
+
 		// Check if this is a legitimate Proton command with environment exports
-		const isProtonCommand = /export\s+\w+='[^']*';/.test(command) && command.includes('/proton');
-		
+		const isProtonCommand =
+			/export\s+\w+='[^']*';/.test(command) && command.includes("/proton");
+
 		const dangerousPatterns = [
 			// Platform-specific dangerous metacharacters (forward slash is safe on Unix)
 			// Allow semicolons in Proton commands for environment variable exports
-			platform() === "win32" ? /[`${}/]/ : (isProtonCommand ? /[`${}]/ : /[;`${}]/),
+			platform() === "win32"
+				? /[`${}/]/
+				: isProtonCommand
+					? /[`${}]/
+					: /[;`${}]/,
 			/\|\|/, // OR operator (potentially dangerous)
 			/\s(sudo|su)\s/, // Privilege escalation
 			/\s(rm|del)\s/, // File deletion
 			/\s(wget|curl)\s/, // Network access
 			/\s(nc|netcat)\s/, // Network tools
 		];
-		
+
 		// Only check for command substitution if not dealing with quoted executable paths
 		if (!hasQuotedPaths) {
 			dangerousPatterns.push(/\(.*\)/); // Parentheses (command substitution)
@@ -466,7 +470,7 @@ export namespace CommandSanitizer {
 				console.error(`DEBUG: Pattern matched: ${pattern.toString()}`);
 				console.error(`DEBUG: Platform: ${platform()}`);
 				console.error(`DEBUG: Has quoted paths: ${hasQuotedPaths}`);
-				
+
 				if (pattern.toString().includes("sudo|su")) {
 					auditLogger.logSecurityEvent(
 						SecurityEvent.PRIVILEGE_ESCALATION,

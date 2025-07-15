@@ -376,28 +376,37 @@ export class GameLauncher implements GameLauncherInterface {
 			this.logger.debug("Looking for Proton build:", {
 				variant,
 				selectedVersion,
-				availableBuilds: installedBuilds.map(b => ({ variant: b.variant, version: b.version }))
+				availableBuilds: installedBuilds.map((b) => ({
+					variant: b.variant,
+					version: b.version,
+				})),
 			});
 			// Normalize version for comparison - handle both full names and parsed versions
 			const normalizeVersion = (version: string, variant: string): string => {
-				if (variant === 'proton-ge') {
+				if (variant === "proton-ge") {
 					// If version starts with GE-Proton, extract the version part
-					if (version.toLowerCase().startsWith('ge-proton')) {
-						return version.replace(/^ge-proton/i, '').replace(/^-/, '');
+					if (version.toLowerCase().startsWith("ge-proton")) {
+						return version.replace(/^ge-proton/i, "").replace(/^-/, "");
 					}
 				}
 				return version;
 			};
-			
-			const normalizedSelectedVersion = normalizeVersion(selectedVersion || '', variant);
-			const protonBuild = installedBuilds.find(
-				(build) => {
-					const normalizedBuildVersion = normalizeVersion(build.version, build.variant);
-					return build.variant === variant && 
-						(build.version === selectedVersion || 
-						 normalizedBuildVersion === normalizedSelectedVersion);
-				}
+
+			const normalizedSelectedVersion = normalizeVersion(
+				selectedVersion || "",
+				variant,
 			);
+			const protonBuild = installedBuilds.find((build) => {
+				const normalizedBuildVersion = normalizeVersion(
+					build.version,
+					build.variant,
+				);
+				return (
+					build.variant === variant &&
+					(build.version === selectedVersion ||
+						normalizedBuildVersion === normalizedSelectedVersion)
+				);
+			});
 			if (!protonBuild) {
 				throw new Error(
 					`Proton ${variant} ${selectedVersion} not found or not installed`,
@@ -405,16 +414,40 @@ export class GameLauncher implements GameLauncherInterface {
 			}
 			const protonPath = path.join(protonBuild.installPath, "proton");
 
-			// Verify the Proton executable exists
+			// Set up environment variables for Proton
+			const homeDir = require("node:os").homedir();
+			const compatDataPath =
+				proton?.winePrefix ||
+				path.join(
+					homeDir,
+					".steam",
+					"steam",
+					"steamapps",
+					"compatdata",
+					gameId,
+				);
+
+			// Verify the Proton executable exists and ensure compat data directory exists
 			const fs = await import("node:fs");
 			if (!fs.existsSync(protonPath)) {
 				throw new Error(`Proton executable not found at ${protonPath}`);
 			}
 
-			// Set up environment variables for Proton
+			// Ensure compat data directory exists
+			if (!fs.existsSync(path.dirname(compatDataPath))) {
+				await fs.promises.mkdir(path.dirname(compatDataPath), {
+					recursive: true,
+				});
+			}
+			if (!fs.existsSync(compatDataPath)) {
+				await fs.promises.mkdir(compatDataPath, { recursive: true });
+			}
+
 			const protonEnvironment = {
 				...(this.options.defaultEnvironment || {}),
 				...(environment || {}),
+				// Essential Proton environment variables
+				STEAM_COMPAT_DATA_PATH: compatDataPath,
 				// Add Wine prefix if specified
 				...(proton?.winePrefix && { WINEPREFIX: proton.winePrefix }),
 				// Add common Proton environment variables
