@@ -1,5 +1,5 @@
 import { access, constants } from "node:fs/promises";
-import { platform } from "node:os";
+import { platform, homedir } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 import { SecurityEvent } from "@/@types";
 import { getSecurityAuditLogger } from "../logging";
@@ -18,7 +18,15 @@ function removeControlCharacters(input: string): string {
 		.join("");
 }
 
-
+/**
+ * Expands tilde (~) to home directory path
+ */
+function expandTildePath(path: string): string {
+	if (path.startsWith('~/') || path === '~') {
+		return path.replace(/^~/, homedir());
+	}
+	return path;
+}
 
 export async function validateExecutable(executable: string): Promise<void> {
 	const auditLogger = getSecurityAuditLogger();
@@ -39,9 +47,12 @@ export async function validateExecutable(executable: string): Promise<void> {
 		throw new Error("Executable path cannot be empty or whitespace only");
 	}
 
+	// Expand tilde to home directory if present
+	const expandedPath = expandTildePath(executable);
+
 	// Perform file system validation
 	try {
-		const resolvedPath = resolve(executable);
+		const resolvedPath = resolve(expandedPath);
 		
 		// First check if file exists
 		await access(resolvedPath, constants.F_OK);
@@ -100,14 +111,18 @@ export namespace SecurityValidator {
 		// Normalize path to prevent traversal
 		const normalized = normalize(sanitized);
 
-		// Check for path traversal attempts
-		if (normalized.includes("..") || normalized.includes("~")) {
+		// Expand tilde to home directory if present
+		const expandedPath = expandTildePath(normalized);
+		const finalNormalized = normalize(expandedPath);
+
+		// Check for path traversal attempts (after tilde expansion)
+		if (finalNormalized.includes("..")) {
 			auditLogger.logSecurityEvent(
 				SecurityEvent.PATH_TRAVERSAL_ATTEMPT,
 				false,
 				{
 					originalPath: path,
-					normalizedPath: normalized,
+					normalizedPath: finalNormalized,
 					error: "Path traversal detected in executable path",
 				},
 			);
@@ -115,10 +130,10 @@ export namespace SecurityValidator {
 		}
 
 		// Validate path length
-		if (normalized.length > 4096) {
+		if (finalNormalized.length > 4096) {
 			auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 				originalPath: path,
-				normalizedPath: normalized,
+				normalizedPath: finalNormalized,
 				error: "Executable path too long",
 			});
 			throw new Error("Executable path too long");
@@ -151,13 +166,13 @@ export namespace SecurityValidator {
 				"LPT8",
 				"LPT9",
 			];
-			const fileName = normalized.split(sep).pop()?.toUpperCase();
+			const fileName = finalNormalized.split(sep).pop()?.toUpperCase();
 			if (fileName) {
 				const baseName = fileName.split(".")[0];
 				if (baseName && reservedNames.includes(baseName)) {
 					auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 						originalPath: path,
-						normalizedPath: normalized,
+						normalizedPath: finalNormalized,
 						reservedName: baseName,
 						error: "Reserved filename detected",
 					});
@@ -166,10 +181,10 @@ export namespace SecurityValidator {
 			}
 
 			// Check for invalid Windows characters (excluding colon which is valid in drive letters)
-			if (/[<>"|?*]/.test(normalized)) {
+			if (/[<>"|?*]/.test(finalNormalized)) {
 				auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 					originalPath: path,
-					normalizedPath: normalized,
+					normalizedPath: finalNormalized,
 					error: "Invalid characters in Windows path",
 				});
 				throw new Error("Invalid characters in Windows path");
@@ -178,10 +193,10 @@ export namespace SecurityValidator {
 
 		auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, true, {
 			originalPath: path,
-			sanitizedPath: normalized,
+			sanitizedPath: finalNormalized,
 		});
 
-		return normalized;
+		return finalNormalized;
 	}
 
 	/**
