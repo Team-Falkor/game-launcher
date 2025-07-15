@@ -513,11 +513,39 @@ export class GameLauncher implements GameLauncherInterface {
 
 			return new Game(gameId, this.eventEmitter, this.processManager);
 		} catch (error) {
-			this.logger.error("Failed to launch game with Proton", {
-				gameId,
-				error: error instanceof Error ? error.message : String(error),
-			});
-			throw error;
+			// Enhanced error handling for different failure scenarios
+			if (error instanceof Error) {
+				// Handle privilege escalation specific errors
+				if (error.name === 'PrivilegeEscalationCancelled') {
+					this.logger.warn("Game launch cancelled by user", {
+						gameId,
+						reason: "User cancelled privilege escalation prompt",
+					});
+					throw new Error("Game launch cancelled. Administrator privileges are required to run games with Proton.");
+				} else if (error.name === 'PrivilegeEscalationFailed') {
+					this.logger.error("Privilege escalation failed", {
+						gameId,
+						error: error.message,
+						suggestion: "Check system authentication settings",
+					});
+					throw new Error(`Failed to obtain administrator privileges: ${error.message}. Please check your system authentication settings.`);
+				} else {
+					// General Proton launch errors
+					this.logger.error("Failed to launch game with Proton", {
+						gameId,
+						error: error.message,
+						errorType: error.name || 'Unknown',
+					});
+					throw error;
+				}
+			} else {
+				// Handle non-Error objects
+				this.logger.error("Failed to launch game with Proton", {
+					gameId,
+					error: String(error),
+				});
+				throw new Error(`Failed to launch game with Proton: ${String(error)}`);
+			}
 		}
 	}
 

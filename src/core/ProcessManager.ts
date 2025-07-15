@@ -612,8 +612,23 @@ export class ProcessManager implements ProcessManagerInterface {
 			// Execute the command asynchronously and handle completion separately
 			sudo.exec(fullCommand, sudoOptions, async (error, stdout, stderr) => {
 				if (error) {
-					// Emit error event for the already-resolved process
-					mockProcess.emit("error", error);
+					// Handle specific error cases for better user experience
+					const errorMessage = error.message || String(error);
+					
+					// Check for common privilege escalation failures
+					if (errorMessage.includes('User cancelled') || 
+						errorMessage.includes('Authentication failed') ||
+						errorMessage.includes('pkexec') && errorMessage.includes('dismissed')) {
+						// User cancelled privilege escalation - emit a more specific error
+						const cancelError = new Error('Privilege escalation cancelled by user. Game launch requires administrator privileges.');
+						cancelError.name = 'PrivilegeEscalationCancelled';
+						mockProcess.emit("error", cancelError);
+					} else {
+						// Other privilege escalation errors
+						const privilegeError = new Error(`Failed to launch with administrator privileges: ${errorMessage}`);
+						privilegeError.name = 'PrivilegeEscalationFailed';
+						mockProcess.emit("error", privilegeError);
+					}
 					return;
 				}
 
