@@ -373,9 +373,30 @@ export class GameLauncher implements GameLauncherInterface {
 			// Get installed Proton builds to find the executable path
 			const installedBuilds =
 				await this.protonManager.getInstalledProtonBuilds();
+			this.logger.debug("Looking for Proton build:", {
+				variant,
+				selectedVersion,
+				availableBuilds: installedBuilds.map(b => ({ variant: b.variant, version: b.version }))
+			});
+			// Normalize version for comparison - handle both full names and parsed versions
+			const normalizeVersion = (version: string, variant: string): string => {
+				if (variant === 'proton-ge') {
+					// If version starts with GE-Proton, extract the version part
+					if (version.toLowerCase().startsWith('ge-proton')) {
+						return version.replace(/^ge-proton/i, '').replace(/^-/, '');
+					}
+				}
+				return version;
+			};
+			
+			const normalizedSelectedVersion = normalizeVersion(selectedVersion || '', variant);
 			const protonBuild = installedBuilds.find(
-				(build) =>
-					build.variant === variant && build.version === selectedVersion,
+				(build) => {
+					const normalizedBuildVersion = normalizeVersion(build.version, build.variant);
+					return build.variant === variant && 
+						(build.version === selectedVersion || 
+						 normalizedBuildVersion === normalizedSelectedVersion);
+				}
 			);
 			if (!protonBuild) {
 				throw new Error(
