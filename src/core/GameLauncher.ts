@@ -273,15 +273,22 @@ export class GameLauncher implements GameLauncherInterface {
 		options: LaunchGameOptions,
 		executable: string,
 	): boolean {
-		if (getPlatform() !== "linux") return false;
-		if (!this.options.proton?.enabled) return false;
-
-		// Check per-launch override
-		if (options.proton?.enabled === false) return false;
-		if (options.proton?.enabled === true) return true;
-
-		// Auto-detect if it's a Windows executable
-		return executable.toLowerCase().endsWith(".exe");
+		const platform = getPlatform();
+		const globalEnabled = this.options.proton?.enabled;
+		const launchEnabled = options.proton?.enabled;
+		const isExe = executable.toLowerCase().endsWith(".exe");
+		console.debug("shouldUseProton checks:", {
+			platform,
+			globalEnabled,
+			launchEnabled,
+			isExe,
+			executable,
+		});
+		if (platform !== "linux") return false;
+		if (!globalEnabled) return false;
+		if (launchEnabled === false) return false;
+		if (launchEnabled === true) return true;
+		return isExe;
 	}
 
 	/**
