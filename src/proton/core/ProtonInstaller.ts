@@ -713,7 +713,15 @@ export class ProtonInstaller extends EventEmitter {
 			throw new Error(`Extraction failed: ${String(error)}`);
 		}
 
-		// Verify extraction was successful
+		// Check if this is source code that needs building
+		const isSourceCode = await this.detectSourceCode(installPath);
+		if (isSourceCode) {
+			// This is source code, we'll build it later in the main installation flow
+			console.log("Detected source code, will build after extraction");
+			return;
+		}
+
+		// For binary releases, verify extraction was successful
 		const protonExe = path.join(installPath, "proton");
 		if (!(await this.pathExists(protonExe))) {
 			throw new Error(

@@ -23,6 +23,8 @@ interface GitHubRelease {
 	prerelease: boolean;
 	draft: boolean;
 	assets: GitHubAsset[];
+	tarball_url?: string;
+	zipball_url?: string;
 }
 
 /**
@@ -180,6 +182,8 @@ export class ProtonVersionFetcher {
 			const publishedReleases = releases.filter((release) => !release.draft);
 
 			return publishedReleases.map((release) => {
+				// Valve Proton releases don't have binary assets, only source code
+				// Look for binary assets first, fallback to tarball_url
 				const asset = release.assets.find((asset) =>
 					asset.name.endsWith(".tar.gz"),
 				);
@@ -198,11 +202,15 @@ export class ProtonVersionFetcher {
 					releaseName: release.name,
 				};
 
+				// Use binary asset if available, otherwise use source tarball
 				if (asset?.browser_download_url) {
 					extendedVersionInfo.downloadUrl = asset.browser_download_url;
-				}
-				if (asset?.size) {
-					extendedVersionInfo.size = asset.size;
+					if (asset.size) {
+						extendedVersionInfo.size = asset.size;
+					}
+				} else if (release.tarball_url) {
+					// Use source tarball as fallback for Valve Proton
+					extendedVersionInfo.downloadUrl = release.tarball_url;
 				}
 
 				return extendedVersionInfo;
