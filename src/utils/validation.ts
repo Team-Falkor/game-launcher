@@ -232,9 +232,10 @@ export namespace SecurityValidator {
 
 			// Check for command injection patterns
 			const dangerousPatterns = [
-				/[;&|`$(){}[\]]/, // Shell metacharacters
+				/[;&|`$(){}]/, // Shell metacharacters (removed square brackets to allow legitimate args)
 				/\\x[0-9a-fA-F]{2}/, // Hex escape sequences
 				/\\[0-7]{1,3}/, // Octal escape sequences
+				/^[^-].*[;&|`$(){}]/, // Injection patterns not starting with dash
 			];
 
 			for (const pattern of dangerousPatterns) {
