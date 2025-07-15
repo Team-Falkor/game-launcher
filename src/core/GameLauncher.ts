@@ -233,8 +233,9 @@ export class GameLauncher implements GameLauncherInterface {
 			throw new Error(`Maximum concurrent games limit reached (${maxGames})`);
 		}
 
-		// Check if Proton launch is requested
-		if (options.proton?.enabled && this.protonManager) {
+		// Determine if Proton should be used
+		const useProton = this.shouldUseProton(options, executable);
+		if (useProton && this.protonManager) {
 			return this.launchGameWithProton(options);
 		}
 
@@ -266,6 +267,21 @@ export class GameLauncher implements GameLauncherInterface {
 			processOptions,
 		);
 		return new Game(gameId, this.eventEmitter, this.processManager);
+	}
+
+	private shouldUseProton(
+		options: LaunchGameOptions,
+		executable: string,
+	): boolean {
+		if (getPlatform() !== "linux") return false;
+		if (!this.options.proton?.enabled) return false;
+
+		// Check per-launch override
+		if (options.proton?.enabled === false) return false;
+		if (options.proton?.enabled === true) return true;
+
+		// Auto-detect if it's a Windows executable
+		return executable.toLowerCase().endsWith(".exe");
 	}
 
 	/**
@@ -324,9 +340,11 @@ export class GameLauncher implements GameLauncherInterface {
 			];
 
 			// Get installed Proton builds to find the executable path
-			const installedBuilds = await this.protonManager.getInstalledProtonBuilds();
+			const installedBuilds =
+				await this.protonManager.getInstalledProtonBuilds();
 			const protonBuild = installedBuilds.find(
-				(build) => build.variant === variant && build.version === selectedVersion,
+				(build) =>
+					build.variant === variant && build.version === selectedVersion,
 			);
 			if (!protonBuild) {
 				throw new Error(
@@ -366,7 +384,7 @@ export class GameLauncher implements GameLauncherInterface {
 					metadata: {
 						...options.metadata,
 						protonVariant: variant,
-						protonVersion: selectedVersion || 'unknown',
+						protonVersion: selectedVersion || "unknown",
 					},
 				}),
 			};
