@@ -417,7 +417,7 @@ export namespace CommandSanitizer {
 			return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 		} else {
 			// Unix: Use single quotes and escape single quotes
-			return `'${arg.replace(/'/g, "'\\''")}';`;
+			return `'${arg.replace(/'/g, "'\\''")}';`
 		}
 	}
 
