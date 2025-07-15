@@ -244,6 +244,12 @@ export class GameLauncher implements GameLauncherInterface {
 
 		// Determine if Proton should be used
 		const useProton = this.shouldUseProton(options, executable);
+		this.logger.info("Proton decision:", {
+			useProton,
+			protonManagerExists: !!this.protonManager,
+			protonEnabled: this.options.proton?.enabled,
+			executable,
+		});
 		if (useProton && this.protonManager) {
 			return this.launchGameWithProton(options);
 		}

@@ -5,9 +5,14 @@ import { GameLauncher } from "./src";
 (async () => {
   const launcher = new GameLauncher({
   logging: {
-    enabled: false
+    enabled: true
   },
-  maxConcurrentGames: 1
+  maxConcurrentGames: 1,
+  proton: {
+    enabled: true,
+    autoDetect: true,
+    preferredVariant: "proton-ge"
+  }
 })
 
 launcher.on("closed", (game) => {
