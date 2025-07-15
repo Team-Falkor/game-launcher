@@ -439,9 +439,13 @@ export namespace CommandSanitizer {
 		// First, check if the command contains properly quoted paths
 		const hasQuotedPaths = /["'][^"']*["']/.test(command);
 		
+		// Check if this is a legitimate Proton command with environment exports
+		const isProtonCommand = /export\s+\w+='[^']*';/.test(command) && command.includes('/proton');
+		
 		const dangerousPatterns = [
 			// Platform-specific dangerous metacharacters (forward slash is safe on Unix)
-			platform() === "win32" ? /[;`${}/]/ : /[;`${}]/, // Exclude forward slash on Unix
+			// Allow semicolons in Proton commands for environment variable exports
+			platform() === "win32" ? /[`${}/]/ : (isProtonCommand ? /[`${}]/ : /[;`${}]/),
 			/\|\|/, // OR operator (potentially dangerous)
 			/\s(sudo|su)\s/, // Privilege escalation
 			/\s(rm|del)\s/, // File deletion
