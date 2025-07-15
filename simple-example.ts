@@ -7,7 +7,8 @@ import { GameLauncher } from "./src";
   logging: {
     enabled: false
   },
-  maxConcurrentGames: 1
+  maxConcurrentGames: 1,
+  
 })
 
 launcher.on("closed", (game) => {
@@ -22,7 +23,8 @@ launcher.on("launched", (game) => {
     gameId: "vampireSurvivors",    
     executable: "C:\\Games\\Vampire Survivors\\VampireSurvivors.exe",
     runAsAdmin: true,
-    args: ["--fullscreen"]
+    args: ["--fullscreen"],
+    
   })
   
   game.on("closed", (data) => {
