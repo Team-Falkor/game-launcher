@@ -86,8 +86,8 @@ export async function demonstrateSourceBuild(): Promise<void> {
 		// Example 1: Install Proton-GE from source
 		console.log("\n--- Installing Proton-GE from source ---");
 		const result = await protonManager.installProtonVersion({
-			variant: "proton-ge",
-			version: "GE-Proton8-26", // Replace with actual version
+			variant: "proton-stable",
+			version: "proton-9.0-4", // Replace with actual version
 			force: true, // Overwrite if exists
 			buildOptions,
 		});
