@@ -456,6 +456,13 @@ export namespace CommandSanitizer {
 
 		for (const pattern of dangerousPatterns) {
 			if (pattern.test(command)) {
+				// Debug: Log the exact pattern that matched
+				console.error(`DEBUG: Command validation failed`);
+				console.error(`DEBUG: Command: ${command}`);
+				console.error(`DEBUG: Pattern matched: ${pattern.toString()}`);
+				console.error(`DEBUG: Platform: ${platform()}`);
+				console.error(`DEBUG: Has quoted paths: ${hasQuotedPaths}`);
+				
 				if (pattern.toString().includes("sudo|su")) {
 					auditLogger.logSecurityEvent(
 						SecurityEvent.PRIVILEGE_ESCALATION,
