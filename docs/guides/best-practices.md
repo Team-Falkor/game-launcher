@@ -624,7 +624,39 @@ const gameId = await launcher.launchGame({
 });
 ```
 
-### 2. Principle of Least Privilege
+### 2. Secure File Path Handling
+
+```typescript
+// ✅ Good: Secure file path handling
+const launcher = new GameLauncher();
+
+// Use absolute paths for clarity
+const localGame = await launcher.launchGame({
+  gameId: 'local-game',
+  executable: '/home/user/games/mygame.exe'
+});
+
+// Validate paths before use
+const gamePath = path.resolve('./games/mygame.exe');
+if (await fs.access(gamePath).then(() => true).catch(() => false)) {
+  const validatedGame = await launcher.launchGame({
+    gameId: 'validated-game',
+    executable: gamePath
+  });
+}
+
+// ❌ Bad: Using relative or unvalidated paths
+try {
+  await launcher.launchGame({
+    gameId: 'unsafe-game',
+    executable: '../../../system/dangerous.exe' // Path traversal risk
+  });
+} catch (error) {
+  console.error('Invalid path rejected:', error.message);
+}
+```
+
+### 3. Principle of Least Privilege
 
 ```typescript
 // ✅ Good: Run with minimal privileges

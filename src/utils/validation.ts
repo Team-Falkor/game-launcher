@@ -18,6 +18,8 @@ function removeControlCharacters(input: string): string {
 		.join("");
 }
 
+
+
 export async function validateExecutable(executable: string): Promise<void> {
 	const auditLogger = getSecurityAuditLogger();
 
@@ -37,11 +39,25 @@ export async function validateExecutable(executable: string): Promise<void> {
 		throw new Error("Executable path cannot be empty or whitespace only");
 	}
 
+	// Perform file system validation
 	try {
 		const resolvedPath = resolve(executable);
-		await access(resolvedPath, constants.F_OK | constants.X_OK);
+		
+		// First check if file exists
+		await access(resolvedPath, constants.F_OK);
+		
+		// For cross-platform compatibility (e.g., .exe files on Linux with Proton),
+		// only check execute permissions on native executables
+		const isWindowsExeOnLinux = platform() !== 'win32' && resolvedPath.toLowerCase().endsWith('.exe');
+		
+		if (!isWindowsExeOnLinux) {
+			// Check execute permissions for native executables
+			await access(resolvedPath, constants.X_OK);
+		}
+		
 		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, true, {
 			executable: resolvedPath,
+			crossPlatform: isWindowsExeOnLinux,
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
@@ -75,6 +91,8 @@ export namespace SecurityValidator {
 			});
 			throw new Error("Executable path must be a non-empty string");
 		}
+
+
 
 		// Remove null bytes and other dangerous characters
 		const sanitized = removeControlCharacters(path);
