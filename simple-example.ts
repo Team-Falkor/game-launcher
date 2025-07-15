@@ -23,6 +23,11 @@ launcher.on("launched", (game) => {
     executable: "C:\\Games\\Vampire Survivors\\VampireSurvivors.exe",
     runAsAdmin: true,
     args: ["--fullscreen"],
+    proton: {
+      enabled: true,
+      variant: "proton-ge",
+      version: "GE-Proton8-26"
+    }
   })
   
   game.on("closed", (data) => {
