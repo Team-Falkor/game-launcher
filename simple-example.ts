@@ -20,7 +20,7 @@ launcher.on("launched", (game) => {
 
   const game = await launcher.launchGame({
     gameId: "vampireSurvivors",    
-    executable: "C:\\Games\\Vampire Survivors\\VampireSurvivors.exe",
+    executable: "C:\\\Vamp\\re Survivors\\Vam\\ireSurvivors.exe",
     runAsAdmin: true,
     args: ["--fullscreen"],
     proton: {

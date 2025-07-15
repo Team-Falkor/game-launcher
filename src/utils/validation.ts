@@ -230,15 +230,21 @@ export namespace SecurityValidator {
 			// Remove null bytes and control characters
 			const sanitized = removeControlCharacters(arg);
 
-			// Check for command injection patterns
-			const dangerousPatterns = [
-				/[;&|`$(){}]/, // Shell metacharacters (removed square brackets to allow legitimate args)
+			// Check for actual command injection patterns (more specific validation)
+			// Allow legitimate game arguments like --fullscreen, -windowed, etc.
+			const actualInjectionPatterns = [
+				/;\s*\w+/, // Command chaining with semicolon
+				/\|\s*\w+/, // Pipe to another command
+				/&\s*\w+/, // Background execution
+				/`[^`]*`/, // Command substitution with backticks
+				/\$\([^)]*\)/, // Command substitution with $()
 				/\\x[0-9a-fA-F]{2}/, // Hex escape sequences
 				/\\[0-7]{1,3}/, // Octal escape sequences
-				/^[^-].*[;&|`$(){}]/, // Injection patterns not starting with dash
+				/\${[^}]*}/, // Variable expansion
 			];
 
-			for (const pattern of dangerousPatterns) {
+			// Only flag if it's clearly an injection attempt, not legitimate args
+			for (const pattern of actualInjectionPatterns) {
 				if (pattern.test(sanitized)) {
 					auditLogger.logSecurityEvent(SecurityEvent.INJECTION_ATTEMPT, false, {
 						originalArgument: arg,
