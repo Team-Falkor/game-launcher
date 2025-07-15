@@ -470,6 +470,7 @@ export class ProtonInstaller extends EventEmitter {
 							? (totalBytes - downloadedBytes) / speed
 							: 0;
 
+					// Always emit progress events, even without total size
 					this.emit("download-progress", {
 						variant,
 						version,
@@ -479,6 +480,16 @@ export class ProtonInstaller extends EventEmitter {
 						speed,
 						estimatedTimeRemaining,
 					} as DownloadProgressEvent);
+
+					// Also emit a status update for downloads without content-length
+					if (totalBytes === 0) {
+						this.emit("download-status", {
+							variant,
+							version,
+							status: "downloading",
+							message: `Downloaded ${(downloadedBytes / 1024 / 1024).toFixed(1)} MB (${(speed / 1024).toFixed(1)} KB/s)`,
+						} as DownloadStatusEvent);
+					}
 
 					lastProgressTime = now;
 					lastDownloadedBytes = downloadedBytes;
@@ -492,18 +503,16 @@ export class ProtonInstaller extends EventEmitter {
 				);
 			}
 
-			// Emit final progress
-			if (totalBytes > 0) {
-				this.emit("download-progress", {
-					variant,
-					version,
-					bytesDownloaded: downloadedBytes,
-					totalBytes,
-					percentage: 100,
-					speed: 0,
-					estimatedTimeRemaining: 0,
-				} as DownloadProgressEvent);
-			}
+			// Emit final progress (always, regardless of totalBytes)
+			this.emit("download-progress", {
+				variant,
+				version,
+				bytesDownloaded: downloadedBytes,
+				totalBytes,
+				percentage: totalBytes > 0 ? 100 : 0,
+				speed: 0,
+				estimatedTimeRemaining: 0,
+			} as DownloadProgressEvent);
 
 			// Validate file integrity
 			await this.validateFileIntegrity(outputPath, variant, version);

@@ -71,6 +71,7 @@ export async function demonstrateSourceBuild(): Promise<void> {
 	// Set up download progress tracking
 	protonManager.onDownloadProgress((event) => {
 		if (event.totalBytes > 0) {
+			// Progress with known total size
 			const progressBar = "=".repeat(Math.floor(event.percentage / 5));
 			const emptyBar = " ".repeat(20 - progressBar.length);
 			const speed = (event.speed / 1024 / 1024).toFixed(1); // MB/s
@@ -79,6 +80,11 @@ export async function demonstrateSourceBuild(): Promise<void> {
 			console.log(
 				`Progress: [${progressBar}${emptyBar}] ${event.percentage.toFixed(1)}% | ${speed} MB/s | ETA: ${eta}s`,
 			);
+		} else {
+			// Progress without known total size (e.g., GitHub tarballs)
+			const downloaded = (event.bytesDownloaded / 1024 / 1024).toFixed(1);
+			const speed = (event.speed / 1024 / 1024).toFixed(1);
+			console.log(`Downloaded: ${downloaded} MB | Speed: ${speed} MB/s`);
 		}
 	});
 
