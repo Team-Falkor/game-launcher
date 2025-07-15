@@ -1046,14 +1046,29 @@ export class ProtonInstaller extends EventEmitter {
 	 * Validates the build output after completion
 	 */
 	private async validateBuildOutput(installPath: string): Promise<void> {
+		// For Valve Proton, check build directory first
+		const buildDir = path.join(installPath, "build");
+		const checkBuildDir = await this.pathExists(buildDir);
+
+		// Determine where to look for files
+		const searchPath = checkBuildDir ? buildDir : installPath;
+
 		// Check for common Proton files
 		const expectedFiles = ["proton", "user_settings.py"];
 		const missingFiles: string[] = [];
 
 		for (const file of expectedFiles) {
-			const filePath = path.join(installPath, file);
+			const filePath = path.join(searchPath, file);
 			if (!(await this.pathExists(filePath))) {
-				missingFiles.push(file);
+				// For build directory, also check root directory as fallback
+				if (checkBuildDir) {
+					const fallbackPath = path.join(installPath, file);
+					if (!(await this.pathExists(fallbackPath))) {
+						missingFiles.push(file);
+					}
+				} else {
+					missingFiles.push(file);
+				}
 			}
 		}
 
@@ -1064,7 +1079,13 @@ export class ProtonInstaller extends EventEmitter {
 		}
 
 		// Check if proton executable is actually executable
-		const protonPath = path.join(installPath, "proton");
+		let protonPath = path.join(searchPath, "proton");
+
+		// If not found in search path and we're checking build dir, try root
+		if (checkBuildDir && !(await this.pathExists(protonPath))) {
+			protonPath = path.join(installPath, "proton");
+		}
+
 		try {
 			const stats = await fs.stat(protonPath);
 			if (!(stats.mode & 0o111)) {
@@ -1091,29 +1112,61 @@ export class ProtonInstaller extends EventEmitter {
 		// Determine command and args before creating Promise
 		let command: string;
 		let commandArgs: string[] = [];
+		let workingDirectory = installPath;
 
 		switch (step) {
-			case "configure":
-				// Try different configure methods
-				if (await this.pathExists(path.join(installPath, "configure.sh"))) {
-					command = "./configure.sh";
-				} else if (await this.pathExists(path.join(installPath, "configure"))) {
-					command = "./configure";
-				} else {
-					// Skip configure if no configure script found
+			case "configure": {
+				// Check if this is Valve Proton (requires out-of-tree build)
+				const isValveProton =
+					(await this.pathExists(path.join(installPath, "configure.sh"))) &&
+					(options.variant === "proton-stable" ||
+						options.variant === "proton-experimental");
+
+				if (isValveProton) {
+					// Create build directory for out-of-tree build
+					const buildDir = path.join(installPath, "build");
+					await fs.mkdir(buildDir, { recursive: true });
+					workingDirectory = buildDir;
+					command = "../configure.sh";
+					commandArgs = options.buildOptions?.configureArgs || [];
+
 					this.emit("build-progress", {
 						variant: options.variant,
 						version: options.version,
 						step,
-						message: "No configure script found, skipping configure step",
+						message: `Creating out-of-tree build in ${buildDir}`,
 					} as BuildProgressEvent);
-					return;
+				} else {
+					// Try different configure methods for other variants
+					if (await this.pathExists(path.join(installPath, "configure.sh"))) {
+						command = "./configure.sh";
+					} else if (
+						await this.pathExists(path.join(installPath, "configure"))
+					) {
+						command = "./configure";
+					} else {
+						// Skip configure if no configure script found
+						this.emit("build-progress", {
+							variant: options.variant,
+							version: options.version,
+							step,
+							message: "No configure script found, skipping configure step",
+						} as BuildProgressEvent);
+						return;
+					}
+					commandArgs = options.buildOptions?.configureArgs || [];
 				}
-				commandArgs = options.buildOptions?.configureArgs || [];
 				break;
-			case "make":
-				// Check if Makefile exists
+			}
+			case "make": {
+				// For Valve Proton, check Makefile in build directory
+				const buildDir = path.join(installPath, "build");
 				if (
+					(await this.pathExists(buildDir)) &&
+					(await this.pathExists(path.join(buildDir, "Makefile")))
+				) {
+					workingDirectory = buildDir;
+				} else if (
 					!(await this.pathExists(path.join(installPath, "Makefile"))) &&
 					!(await this.pathExists(path.join(installPath, "makefile")))
 				) {
@@ -1124,10 +1177,20 @@ export class ProtonInstaller extends EventEmitter {
 				command = "make";
 				commandArgs = args;
 				break;
-			case "install":
+			}
+			case "install": {
+				// For Valve Proton, install from build directory
+				const installBuildDir = path.join(installPath, "build");
+				if (
+					(await this.pathExists(installBuildDir)) &&
+					(await this.pathExists(path.join(installBuildDir, "Makefile")))
+				) {
+					workingDirectory = installBuildDir;
+				}
 				command = "make";
 				commandArgs = args;
 				break;
+			}
 		}
 
 		return new Promise((resolve, reject) => {
@@ -1139,7 +1202,7 @@ export class ProtonInstaller extends EventEmitter {
 			} as BuildProgressEvent);
 
 			const child = spawn(command, commandArgs, {
-				cwd: installPath,
+				cwd: workingDirectory,
 				stdio: ["ignore", "pipe", "pipe"],
 				shell: true,
 			});
