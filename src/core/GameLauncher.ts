@@ -443,11 +443,21 @@ export class GameLauncher implements GameLauncherInterface {
 				await fs.promises.mkdir(compatDataPath, { recursive: true });
 			}
 
+			// Detect Steam installation path
+			const steamPaths = [
+				path.join(homeDir, '.steam', 'steam'),
+				path.join(homeDir, '.local', 'share', 'Steam'),
+				'/usr/share/steam',
+				'/opt/steam'
+			];
+			const steamInstallPath = steamPaths.find(p => fs.existsSync(p)) || steamPaths[0];
+			
 			const protonEnvironment = {
 				...(this.options.defaultEnvironment || {}),
 				...(environment || {}),
 				// Essential Proton environment variables
 				STEAM_COMPAT_DATA_PATH: compatDataPath,
+				STEAM_COMPAT_CLIENT_INSTALL_PATH: steamInstallPath || path.join(homeDir, '.steam', 'steam'),
 				// Add Wine prefix if specified
 				...(proton?.winePrefix && { WINEPREFIX: proton.winePrefix }),
 				// Add common Proton environment variables
