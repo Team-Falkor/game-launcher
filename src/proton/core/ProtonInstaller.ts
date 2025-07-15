@@ -10,6 +10,7 @@ import type {
 	ProtonInstallResult,
 	ProtonRemoveOptions,
 	ProtonRemoveResult,
+	ProtonVariant,
 	ProtonVersionInfo,
 } from "@/@types";
 
@@ -251,7 +252,11 @@ export class ProtonInstaller extends EventEmitter {
 		options: ProtonInstallOptions,
 	): Promise<void> {
 		const tempDir = path.join(os.tmpdir(), `proton-install-${Date.now()}`);
-		const archivePath = path.join(tempDir, "proton.tar.gz");
+
+		// Determine file extension from URL
+		const urlPath = new URL(downloadUrl).pathname;
+		const fileName = path.basename(urlPath);
+		const archivePath = path.join(tempDir, fileName || "proton-archive");
 
 		try {
 			// Create temp directory
@@ -562,9 +567,9 @@ export class ProtonInstaller extends EventEmitter {
 
 			// Check file header for tar.gz signature
 			const headerBuffer = await this.readFileHeader(filePath, 10);
-			if (!this.isValidTarGzHeader(headerBuffer)) {
+			if (!this.isValidArchiveHeader(headerBuffer)) {
 				throw new Error(
-					"Downloaded file does not appear to be a valid tar.gz archive",
+					"Downloaded file does not appear to be a valid compressed archive (tar.gz or tar.xz)",
 				);
 			}
 
@@ -594,16 +599,33 @@ export class ProtonInstaller extends EventEmitter {
 	}
 
 	/**
-	 * Checks if the file header indicates a valid gzip file
+	 * Checks if the file header indicates a valid compressed archive (gzip or xz)
 	 */
-	private isValidTarGzHeader(header: Buffer): boolean {
+	private isValidArchiveHeader(header: Buffer): boolean {
+		if (header.length < 6) return false;
+
 		// Gzip files start with magic bytes 0x1f 0x8b
-		if (header.length < 2) return false;
-		return header[0] === 0x1f && header[1] === 0x8b;
+		if (header[0] === 0x1f && header[1] === 0x8b) {
+			return true;
+		}
+
+		// XZ files start with magic bytes 0xfd 0x37 0x7a 0x58 0x5a 0x00
+		if (
+			header[0] === 0xfd &&
+			header[1] === 0x37 &&
+			header[2] === 0x7a &&
+			header[3] === 0x58 &&
+			header[4] === 0x5a &&
+			header[5] === 0x00
+		) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
-	 * Extracts a tar.gz archive with progress tracking
+	 * Extracts a compressed archive (tar.gz or tar.xz) with progress tracking
 	 */
 	private async extractArchive(
 		archivePath: string,
@@ -706,19 +728,52 @@ export class ProtonInstaller extends EventEmitter {
 	private async getVersionInfo(
 		options: ProtonInstallOptions,
 	): Promise<ProtonVersionInfo | null> {
-		// This would typically fetch from ProtonVersionFetcher
-		// For now, we'll construct GitHub URLs based on known patterns
-		const downloadUrl = this.constructDownloadUrl(options);
+		// Import ProtonVersionFetcher to get actual download URLs from GitHub API
+		const { ProtonVersionFetcher } = await import("./ProtonVersionFetcher");
+		const fetcher = new ProtonVersionFetcher();
 
-		if (!downloadUrl) {
+		try {
+			// Fetch versions for the specific variant
+			const versions = await fetcher.fetchVersionsForVariant(
+				options.variant as ProtonVariant,
+			);
+
+			// Find the exact version match
+			const versionInfo = versions.find((v) => v.version === options.version);
+
+			if (!versionInfo || !versionInfo.downloadUrl) {
+				console.warn(
+					`No download URL found for ${options.variant} version ${options.version}`,
+				);
+				// Fallback to constructed URL as last resort
+				const fallbackUrl = this.constructDownloadUrl(options);
+				if (fallbackUrl) {
+					return {
+						version: options.version,
+						installed: false,
+						downloadUrl: fallbackUrl,
+					};
+				}
+				return null;
+			}
+
+			return versionInfo;
+		} catch (error) {
+			console.error(
+				`Failed to fetch version info for ${options.variant} ${options.version}:`,
+				error,
+			);
+			// Fallback to constructed URL
+			const fallbackUrl = this.constructDownloadUrl(options);
+			if (fallbackUrl) {
+				return {
+					version: options.version,
+					installed: false,
+					downloadUrl: fallbackUrl,
+				};
+			}
 			return null;
 		}
-
-		return {
-			version: options.version,
-			installed: false,
-			downloadUrl,
-		};
 	}
 
 	/**
@@ -729,13 +784,28 @@ export class ProtonInstaller extends EventEmitter {
 
 		switch (variant) {
 			case "proton-ge":
-				return `https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${version}/${version}.tar.gz`;
+				// Proton-GE releases typically have the format: GE-Proton8-32.tar.gz
+				// But the version might be just the number part, so we need to handle both
+				if (version.startsWith("GE-Proton")) {
+					return `https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${version}/${version}.tar.gz`;
+				} else {
+					// Try common patterns
+					return `https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton${version}/GE-Proton${version}.tar.gz`;
+				}
 			case "wine-ge":
-				return `https://github.com/GloriousEggroll/wine-ge-custom/releases/download/${version}/${version}.tar.gz`;
+				// Wine-GE releases use .tar.xz format and have lutris in the filename
+				// Example: lutris-GE-Proton8-26-x86_64.tar.xz
+				if (version.startsWith("lutris-")) {
+					return `https://github.com/GloriousEggroll/wine-ge-custom/releases/download/${version}/${version}.tar.xz`;
+				} else {
+					return `https://github.com/GloriousEggroll/wine-ge-custom/releases/download/${version}/lutris-${version}-x86_64.tar.xz`;
+				}
 			case "proton-stable":
 			case "proton-experimental":
-				// Valve Proton releases have different naming patterns
-				return `https://github.com/ValveSoftware/Proton/releases/download/${version}/proton-${version}.tar.gz`;
+				// Valve Proton releases have various naming patterns
+				// Common patterns: proton_8.0.tar.gz, proton-8.0-4.tar.gz
+				// Try the most common pattern first
+				return `https://github.com/ValveSoftware/Proton/releases/download/proton-${version}/proton-${version}.tar.gz`;
 			default:
 				return null;
 		}
