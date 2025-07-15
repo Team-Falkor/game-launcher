@@ -33,7 +33,6 @@ export async function demonstrateSourceBuild(): Promise<void> {
 		enableBuild: true, // Enable building from source
 		buildTimeout: 7200000, // 2 hours timeout
 		makeJobs: 4, // Use 4 parallel jobs
-		configureArgs: ["--enable-win64"], // Custom configure arguments
 		makeArgs: ["VERBOSE=1"], // Custom make arguments
 	};
 
