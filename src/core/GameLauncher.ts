@@ -362,10 +362,18 @@ export class GameLauncher implements GameLauncherInterface {
 				selectedVersion = installedVersions[0]?.version;
 			}
 
+			// Get home directory for path expansion
+			const homeDir = require("node:os").homedir();
+			
+			// Expand tilde in executable path
+			const expandedExecutable = executable.startsWith('~') 
+				? executable.replace('~', homeDir)
+				: executable;
+			
 			// Launch the game with Proton
 			const protonArgs = [
 				"run",
-				executable,
+				expandedExecutable,
 				...(proton?.customArgs || []),
 				...args,
 			];
@@ -415,7 +423,6 @@ export class GameLauncher implements GameLauncherInterface {
 			const protonPath = path.join(protonBuild.installPath, "proton");
 
 			// Set up environment variables for Proton
-			const homeDir = require("node:os").homedir();
 			const compatDataPath =
 				proton?.winePrefix ||
 				path.join(
