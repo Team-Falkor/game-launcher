@@ -1,3 +1,4 @@
+import path from "node:path";
 import { validateGameId } from "@/utils/validation";
 import type {
 	GameLauncherInterface,
@@ -22,7 +23,7 @@ export class GameLauncher implements GameLauncherInterface {
 	private processManager: ProcessManager;
 	private options: GameLauncherOptions;
 	private logger!: ILogger;
-	private protonManager?: ProtonManager;
+	private protonManager: ProtonManager | undefined;
 
 	constructor(options: GameLauncherOptions = {}) {
 		this.options = {
@@ -90,6 +91,13 @@ export class GameLauncher implements GameLauncherInterface {
 		try {
 			this.protonManager = new ProtonManager();
 
+			// Verify Proton is actually supported
+			if (!this.protonManager.isProtonSupported()) {
+				this.logger?.warn?.("Proton is not supported on this system");
+				this.protonManager = undefined;
+				return;
+			}
+
 			this.logger?.info?.("ProtonManager initialized", {
 				installPath: protonOptions.installPath,
 				autoDetect: protonOptions.autoDetect,
@@ -99,6 +107,7 @@ export class GameLauncher implements GameLauncherInterface {
 			this.logger?.error?.("Failed to initialize ProtonManager", {
 				error: error instanceof Error ? error.message : String(error),
 			});
+			this.protonManager = undefined;
 		}
 	}
 
@@ -277,7 +286,7 @@ export class GameLauncher implements GameLauncherInterface {
 		const globalEnabled = this.options.proton?.enabled;
 		const launchEnabled = options.proton?.enabled;
 		const isExe = executable.toLowerCase().endsWith(".exe");
-		console.debug("shouldUseProton checks:", {
+		this.logger.debug("shouldUseProton checks:", {
 			platform,
 			globalEnabled,
 			launchEnabled,
@@ -299,6 +308,11 @@ export class GameLauncher implements GameLauncherInterface {
 	): Promise<Game> {
 		if (!this.protonManager) {
 			throw new Error("Proton is not available or not initialized");
+		}
+
+		// Double-check Proton support
+		if (!this.protonManager.isProtonSupported()) {
+			throw new Error("Proton is not supported on this platform");
 		}
 
 		const {
@@ -332,10 +346,14 @@ export class GameLauncher implements GameLauncherInterface {
 				if (!variantVersions || variantVersions.length === 0) {
 					throw new Error(`No ${variant} versions available`);
 				}
-				// Use the first installed version, or the latest available
-				const installedVersion = variantVersions.find((v) => v.installed);
-				selectedVersion =
-					installedVersion?.version || variantVersions[0]?.version;
+				// Prioritize installed versions
+				const installedVersions = variantVersions.filter((v) => v.installed);
+				if (installedVersions.length === 0) {
+					throw new Error(
+						`No installed ${variant} versions found. Please install a ${variant} version first.`,
+					);
+				}
+				selectedVersion = installedVersions[0]?.version;
 			}
 
 			// Launch the game with Proton
@@ -358,7 +376,13 @@ export class GameLauncher implements GameLauncherInterface {
 					`Proton ${variant} ${selectedVersion} not found or not installed`,
 				);
 			}
-			const protonPath = `${protonBuild.installPath}/proton`;
+			const protonPath = path.join(protonBuild.installPath, "proton");
+
+			// Verify the Proton executable exists
+			const fs = await import("node:fs");
+			if (!fs.existsSync(protonPath)) {
+				throw new Error(`Proton executable not found at ${protonPath}`);
+			}
 
 			// Set up environment variables for Proton
 			const protonEnvironment = {
