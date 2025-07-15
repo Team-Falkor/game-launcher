@@ -440,7 +440,8 @@ export namespace CommandSanitizer {
 		const hasQuotedPaths = /["'][^"']*["']/.test(command);
 		
 		const dangerousPatterns = [
-			/[;`${}]/, // Dangerous shell metacharacters (excluding & and | for Windows)
+			// Platform-specific dangerous metacharacters (forward slash is safe on Unix)
+			platform() === "win32" ? /[;`${}/]/ : /[;`${}]/, // Exclude forward slash on Unix
 			/\|\|/, // OR operator (potentially dangerous)
 			/\s(sudo|su)\s/, // Privilege escalation
 			/\s(rm|del)\s/, // File deletion
