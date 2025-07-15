@@ -436,6 +436,9 @@ export namespace CommandSanitizer {
 		}
 
 		// Check for shell injection patterns (allow legitimate Windows command operators)
+		// First, check if the command contains properly quoted paths
+		const hasQuotedPaths = /["'][^"']*["']/.test(command);
+		
 		const dangerousPatterns = [
 			/[;`${}]/, // Dangerous shell metacharacters (excluding & and | for Windows)
 			/\|\|/, // OR operator (potentially dangerous)
@@ -443,8 +446,12 @@ export namespace CommandSanitizer {
 			/\s(rm|del)\s/, // File deletion
 			/\s(wget|curl)\s/, // Network access
 			/\s(nc|netcat)\s/, // Network tools
-			/\(.*\)/, // Parentheses (command substitution)
 		];
+		
+		// Only check for command substitution if not dealing with quoted executable paths
+		if (!hasQuotedPaths) {
+			dangerousPatterns.push(/\(.*\)/); // Parentheses (command substitution)
+		}
 
 		for (const pattern of dangerousPatterns) {
 			if (pattern.test(command)) {
