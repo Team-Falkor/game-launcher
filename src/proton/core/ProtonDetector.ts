@@ -249,18 +249,17 @@ export class ProtonDetector {
 	} {
 		const name = dirName.toLowerCase();
 
-		// Proton-GE patterns
+		// Proton-GE patterns - preserve full version name to match API
 		if (name.includes("ge-proton") || name.includes("proton-ge")) {
-			const version = dirName
-				.replace(/^(ge-)?proton-?/i, "")
-				.replace(/^ge-?/i, "");
-			return { version, variant: "proton-ge" };
+			// Keep the full directory name as version for GE-Proton builds
+			// This ensures compatibility with API version names like "GE-Proton10-9"
+			return { version: dirName, variant: "proton-ge" };
 		}
 
 		// Wine-GE patterns
 		if (name.includes("wine-ge") || name.toLowerCase().includes("wine-ge")) {
-			const version = dirName.replace(/wine-?ge-?/i, "").replace(/^ge-?/i, "");
-			return { version, variant: "wine-ge" };
+			// Keep the full directory name for Wine-GE builds too
+			return { version: dirName, variant: "wine-ge" };
 		}
 
 		// Steam Proton patterns
@@ -268,9 +267,9 @@ export class ProtonDetector {
 			return { version: "bleeding-edge", variant: "proton-experimental" };
 		}
 
-		// Default stable Proton
-		const version = dirName.replace(/^proton\s*/i, "").trim() || "unknown";
-		return { version, variant: "proton-stable" };
+		// Default stable Proton - preserve full directory name for consistency
+		// This handles official Valve Proton builds like "Proton-8.0", "Proton 9.0", etc.
+		return { version: dirName, variant: "proton-stable" };
 	}
 
 	/**

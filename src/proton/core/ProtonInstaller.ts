@@ -755,8 +755,23 @@ export class ProtonInstaller extends EventEmitter {
 				options.variant as ProtonVariant,
 			);
 
-			// Find the exact version match
-			const versionInfo = versions.find((v) => v.version === options.version);
+			// Find the exact version match - try both full version and shortened version
+			let versionInfo = versions.find((v) => v.version === options.version);
+			
+			// If not found with exact match, try to find by shortened version for backward compatibility
+			if (!versionInfo && options.variant === "proton-ge") {
+				// For GE-Proton, also try matching against shortened version (e.g., "10-9" matches "GE-Proton10-9")
+				versionInfo = versions.find((v) => {
+					const shortVersion = v.version.replace(/^(ge-)?proton-?/i, "").replace(/^ge-?/i, "");
+					return shortVersion === options.version;
+				});
+			} else if (!versionInfo && options.variant === "wine-ge") {
+				// For Wine-GE, also try matching against shortened version
+				versionInfo = versions.find((v) => {
+					const shortVersion = v.version.replace(/wine-?ge-?/i, "").replace(/^ge-?/i, "");
+					return shortVersion === options.version;
+				});
+			}
 
 			if (!versionInfo || !versionInfo.downloadUrl) {
 				console.warn(
