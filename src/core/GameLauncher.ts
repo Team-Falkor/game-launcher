@@ -221,26 +221,44 @@ export class GameLauncher implements GameLauncherInterface {
 			protonBuild,
 			proton,
 			environment,
-			// homeDir,
+			homeDir,
 		} = params;
 
 		// Create Wine prefix directory if it doesn't exist
 		const fs = await import("node:fs");
 		const winePrefix = proton?.winePrefix || path.join(compatDataPath, "pfx");
 
-		// Note: homeDir parameter is available for future extensibility
-
+		// Create necessary directories as per Proton documentation
 		try {
+			// 1. Create Wine prefix directory
 			if (!fs.existsSync(winePrefix)) {
 				await fs.promises.mkdir(winePrefix, { recursive: true });
 				this.logger.debug("Created Wine prefix directory", {
 					path: winePrefix,
 				});
 			}
+
+			// 2. Create Steam compatdata directory (required by Proton for pfx.lock and other internal files)
+			const steamCompatDataDir = path.join(steamInstallPath, "steamapps", "compatdata");
+			if (!fs.existsSync(steamCompatDataDir)) {
+				await fs.promises.mkdir(steamCompatDataDir, { recursive: true });
+				this.logger.debug("Created Steam compatdata directory", {
+					path: steamCompatDataDir,
+				});
+			}
+
+			// 3. Create ProtonFixes directory (required by ProtonFixes component)
+			const protonFixesDir = path.join(homeDir, ".config", "protonfixes");
+			if (!fs.existsSync(protonFixesDir)) {
+				await fs.promises.mkdir(protonFixesDir, { recursive: true });
+				this.logger.debug("Created ProtonFixes directory", {
+					path: protonFixesDir,
+				});
+			}
 		} catch (error) {
-			this.logger.warn("Failed to create Wine prefix directory", {
+			this.logger.warn("Failed to create required Proton directories", {
 				error: String(error),
-				path: winePrefix,
+				winePrefix,
 			});
 		}
 
@@ -251,7 +269,8 @@ export class GameLauncher implements GameLauncherInterface {
 			...(environment || {}),
 
 			// Essential Proton/Steam environment variables
-			STEAM_COMPAT_DATA_PATH: compatDataPath,
+			// STEAM_COMPAT_DATA_PATH should point to the base compatdata directory, not the game-specific one
+			STEAM_COMPAT_DATA_PATH: path.join(steamInstallPath, "steamapps", "compatdata"),
 			STEAM_COMPAT_CLIENT_INSTALL_PATH: steamInstallPath,
 			STEAM_COMPAT_INSTALL_PATH: protonBuild.installPath,
 
