@@ -239,7 +239,11 @@ export class GameLauncher implements GameLauncherInterface {
 			}
 
 			// 2. Create Steam compatdata directory (required by Proton for pfx.lock and other internal files)
-			const steamCompatDataDir = path.join(steamInstallPath, "steamapps", "compatdata");
+			const steamCompatDataDir = path.join(
+				steamInstallPath,
+				"steamapps",
+				"compatdata",
+			);
 			if (!fs.existsSync(steamCompatDataDir)) {
 				await fs.promises.mkdir(steamCompatDataDir, { recursive: true });
 				this.logger.debug("Created Steam compatdata directory", {
@@ -270,7 +274,11 @@ export class GameLauncher implements GameLauncherInterface {
 
 			// Essential Proton/Steam environment variables
 			// STEAM_COMPAT_DATA_PATH should point to the base compatdata directory, not the game-specific one
-			STEAM_COMPAT_DATA_PATH: path.join(steamInstallPath, "steamapps", "compatdata"),
+			STEAM_COMPAT_DATA_PATH: path.join(
+				steamInstallPath,
+				"steamapps",
+				"compatdata",
+			),
 			STEAM_COMPAT_CLIENT_INSTALL_PATH: steamInstallPath,
 			STEAM_COMPAT_INSTALL_PATH: protonBuild.installPath,
 
@@ -322,6 +330,137 @@ export class GameLauncher implements GameLauncherInterface {
 		});
 
 		return protonEnvironment;
+	}
+
+	/**
+	 * Find a specific Proton build without scanning all directories (optimized)
+	 */
+	private async getSpecificProtonBuild(
+		variant: string,
+		version: string,
+		steamInstallPath: string,
+		steamLibraryPaths: string[],
+	): Promise<
+		Array<{
+			variant: string;
+			version: string;
+			installPath: string;
+			source: string;
+		}>
+	> {
+		const fs = await import("node:fs");
+		const builds: Array<{
+			variant: string;
+			version: string;
+			installPath: string;
+			source: string;
+		}> = [];
+
+		// First, try ProtonManager cache (fastest)
+		if (this.protonManager) {
+			try {
+				const managerBuilds =
+					await this.protonManager.getInstalledProtonBuilds();
+				const specificBuild = managerBuilds.find(
+					(b) =>
+						b.variant === variant &&
+						(b.version === version ||
+							this.normalizeVersion(b.version, variant) ===
+								this.normalizeVersion(version, variant)),
+				);
+				if (specificBuild) {
+					builds.push({ ...specificBuild, source: "proton-manager" });
+					return builds;
+				}
+			} catch (error) {
+				this.logger.debug("Failed to get specific build from ProtonManager", {
+					error: String(error),
+				});
+			}
+		}
+
+		// Generate possible directory names for the specific version
+		const possibleDirNames = this.generatePossibleProtonDirNames(
+			variant,
+			version,
+		);
+
+		// Search in Steam compatibility tools directories
+		const compatToolsPaths = [
+			path.join(steamInstallPath, "compatibilitytools.d"),
+			...steamLibraryPaths.map((p) => path.join(p, "steamapps", "common")),
+		];
+
+		for (const compatPath of compatToolsPaths) {
+			if (!fs.existsSync(compatPath)) continue;
+
+			for (const dirName of possibleDirNames) {
+				const protonDir = path.join(compatPath, dirName);
+				const protonPath = path.join(protonDir, "proton");
+
+				if (fs.existsSync(protonPath)) {
+					builds.push({
+						variant,
+						version,
+						installPath: protonDir,
+						source: "steam-compat-tools",
+					});
+					this.logger.debug("Found specific Proton build", {
+						variant,
+						version,
+						path: protonDir,
+					});
+					return builds;
+				}
+			}
+		}
+
+		return builds;
+	}
+
+	/**
+	 * Generate possible directory names for a Proton variant and version
+	 */
+	private generatePossibleProtonDirNames(
+		variant: string,
+		version: string,
+	): string[] {
+		const names: string[] = [];
+
+		if (variant === "proton-ge") {
+			// Common GE-Proton naming patterns
+			names.push(`GE-Proton${version}`);
+			names.push(`GE-Proton-${version}`);
+			names.push(`GE-Proton_${version}`);
+			names.push(version); // Sometimes just the version
+		} else if (variant === "proton") {
+			names.push(`Proton ${version}`);
+			names.push(`Proton-${version}`);
+			names.push(`Proton_${version}`);
+			names.push(version);
+		} else if (variant === "proton-experimental") {
+			names.push(`Proton-Experimental`);
+			names.push(`Proton Experimental`);
+			names.push(version);
+		} else {
+			// Generic fallback
+			names.push(version);
+		}
+
+		return names;
+	}
+
+	/**
+	 * Normalize version for comparison
+	 */
+	private normalizeVersion(version: string, variant: string): string {
+		if (variant === "proton-ge") {
+			// If version starts with GE-Proton, extract the version part
+			if (version.toLowerCase().startsWith("ge-proton")) {
+				return version.replace(/^ge-proton/i, "").replace(/^[-_]/, "");
+			}
+		}
+		return version;
 	}
 
 	/**
@@ -890,10 +1029,45 @@ export class GameLauncher implements GameLauncherInterface {
 			const protonArgs = await this.buildProtonLaunchArgs(protonLaunchParams);
 
 			// Enhanced Proton build detection (inspired by Heroic)
-			const installedBuilds = await this.getEnhancedProtonBuilds(
-				steamInstallPath,
-				steamLibraryPaths,
-			);
+			// Optimize: if specific version is provided, try to find it directly first
+			let installedBuilds: Array<{
+				variant: string;
+				version: string;
+				installPath: string;
+				source: string;
+			}>;
+
+			if (selectedVersion) {
+				// Try to find the specific version directly without scanning all folders
+				installedBuilds = await this.getSpecificProtonBuild(
+					variant,
+					selectedVersion,
+					steamInstallPath,
+					steamLibraryPaths,
+				);
+
+				// If not found, fall back to full scan
+				if (installedBuilds.length === 0) {
+					this.logger.debug(
+						"Specific Proton version not found directly, performing full scan",
+						{
+							variant,
+							selectedVersion,
+						},
+					);
+					installedBuilds = await this.getEnhancedProtonBuilds(
+						steamInstallPath,
+						steamLibraryPaths,
+					);
+				}
+			} else {
+				// No specific version requested, scan all
+				installedBuilds = await this.getEnhancedProtonBuilds(
+					steamInstallPath,
+					steamLibraryPaths,
+				);
+			}
+
 			this.logger.debug("Looking for Proton build:", {
 				variant,
 				selectedVersion,
@@ -903,23 +1077,13 @@ export class GameLauncher implements GameLauncherInterface {
 					source: b.source || "unknown",
 				})),
 			});
-			// Normalize version for comparison - handle both full names and parsed versions
-			const normalizeVersion = (version: string, variant: string): string => {
-				if (variant === "proton-ge") {
-					// If version starts with GE-Proton, extract the version part
-					if (version.toLowerCase().startsWith("ge-proton")) {
-						return version.replace(/^ge-proton/i, "").replace(/^-/, "");
-					}
-				}
-				return version;
-			};
-
-			const normalizedSelectedVersion = normalizeVersion(
+			// Find the specific Proton build
+			const normalizedSelectedVersion = this.normalizeVersion(
 				selectedVersion || "",
 				variant,
 			);
 			const protonBuild = installedBuilds.find((build) => {
-				const normalizedBuildVersion = normalizeVersion(
+				const normalizedBuildVersion = this.normalizeVersion(
 					build.version,
 					build.variant,
 				);
