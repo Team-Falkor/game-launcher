@@ -428,16 +428,29 @@ export class GameLauncher implements GameLauncherInterface {
 		const names: string[] = [];
 
 		if (variant === "proton-ge") {
-			// Common GE-Proton naming patterns
-			names.push(`GE-Proton${version}`);
-			names.push(`GE-Proton-${version}`);
-			names.push(`GE-Proton_${version}`);
-			names.push(version); // Sometimes just the version
-		} else if (variant === "proton") {
-			names.push(`Proton ${version}`);
-			names.push(`Proton-${version}`);
-			names.push(`Proton_${version}`);
-			names.push(version);
+			// For GE-Proton, the version might already be the full directory name
+			if (version.startsWith("GE-Proton")) {
+				// Version is already the full directory name (e.g., "GE-Proton10-9")
+				names.push(version);
+			} else {
+				// Version is just the number part, generate full names
+				names.push(`GE-Proton${version}`);
+				names.push(`GE-Proton-${version}`);
+				names.push(`GE-Proton_${version}`);
+				names.push(version); // Sometimes just the version
+			}
+		} else if (variant === "proton" || variant === "proton-stable") {
+			// For Valve Proton, the version might already be the full directory name
+			if (version.startsWith("Proton")) {
+				// Version is already the full directory name (e.g., "Proton-8.0")
+				names.push(version);
+			} else {
+				// Version is just the number part, generate full names
+				names.push(`Proton ${version}`);
+				names.push(`Proton-${version}`);
+				names.push(`Proton_${version}`);
+				names.push(version);
+			}
 		} else if (variant === "proton-experimental") {
 			names.push(`Proton-Experimental`);
 			names.push(`Proton Experimental`);
