@@ -356,34 +356,18 @@ export class GameLauncher implements GameLauncherInterface {
 			source: string;
 		}> = [];
 
-		// First, try ProtonManager cache (fastest)
-		if (this.protonManager) {
-			try {
-				const managerBuilds =
-					await this.protonManager.getInstalledProtonBuilds();
-				const specificBuild = managerBuilds.find(
-					(b) =>
-						b.variant === variant &&
-						(b.version === version ||
-							this.normalizeVersion(b.version, variant) ===
-								this.normalizeVersion(version, variant)),
-				);
-				if (specificBuild) {
-					builds.push({ ...specificBuild, source: "proton-manager" });
-					return builds;
-				}
-			} catch (error) {
-				this.logger.debug("Failed to get specific build from ProtonManager", {
-					error: String(error),
-				});
-			}
-		}
-
+		// Skip ProtonManager cache to avoid full directory scan
 		// Generate possible directory names for the specific version
 		const possibleDirNames = this.generatePossibleProtonDirNames(
 			variant,
 			version,
 		);
+
+		this.logger.debug("Searching for specific Proton build", {
+			variant,
+			version,
+			possibleDirNames,
+		});
 
 		// Search in Steam compatibility tools directories
 		const compatToolsPaths = [
@@ -392,11 +376,21 @@ export class GameLauncher implements GameLauncherInterface {
 		];
 
 		for (const compatPath of compatToolsPaths) {
-			if (!fs.existsSync(compatPath)) continue;
+			if (!fs.existsSync(compatPath)) {
+				this.logger.debug("Compatibility tools path does not exist", {
+					path: compatPath,
+				});
+				continue;
+			}
 
 			for (const dirName of possibleDirNames) {
 				const protonDir = path.join(compatPath, dirName);
 				const protonPath = path.join(protonDir, "proton");
+
+				this.logger.debug("Checking for Proton executable", {
+					protonPath,
+					dirName,
+				});
 
 				if (fs.existsSync(protonPath)) {
 					builds.push({
@@ -414,6 +408,12 @@ export class GameLauncher implements GameLauncherInterface {
 				}
 			}
 		}
+
+		this.logger.debug("Specific Proton build not found", {
+			variant,
+			version,
+			searchedPaths: compatToolsPaths,
+		});
 
 		return builds;
 	}
@@ -1046,18 +1046,10 @@ export class GameLauncher implements GameLauncherInterface {
 					steamLibraryPaths,
 				);
 
-				// If not found, fall back to full scan
+				// If specific version not found, throw error immediately
 				if (installedBuilds.length === 0) {
-					this.logger.debug(
-						"Specific Proton version not found directly, performing full scan",
-						{
-							variant,
-							selectedVersion,
-						},
-					);
-					installedBuilds = await this.getEnhancedProtonBuilds(
-						steamInstallPath,
-						steamLibraryPaths,
+					throw new Error(
+						`Proton ${variant} ${selectedVersion} not found. Please ensure it is installed in Steam compatibility tools directories.`,
 					);
 				}
 			} else {
