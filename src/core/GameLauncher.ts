@@ -112,6 +112,475 @@ export class GameLauncher implements GameLauncherInterface {
 	}
 
 	/**
+	 * Enhanced Steam installation detection (inspired by Heroic Games Launcher)
+	 */
+	private async detectSteamInstallation(homeDir: string): Promise<string> {
+		const fs = await import("node:fs");
+
+		const steamPaths = [
+			path.join(homeDir, ".steam", "steam"),
+			path.join(homeDir, ".local", "share", "Steam"),
+			path.join(
+				homeDir,
+				".var",
+				"app",
+				"com.valvesoftware.Steam",
+				".local",
+				"share",
+				"Steam",
+			), // Flatpak
+			"/usr/share/steam",
+			"/opt/steam",
+		];
+
+		for (const steamPath of steamPaths) {
+			if (fs.existsSync(steamPath)) {
+				this.logger.debug("Found Steam installation", { path: steamPath });
+				return steamPath;
+			}
+		}
+
+		this.logger.warn("Steam installation not found, using default path");
+		return steamPaths[0] || path.join(homeDir, ".steam", "steam"); // Default fallback
+	}
+
+	/**
+	 * Detect Steam library paths by parsing libraryfolders.vdf (inspired by Heroic)
+	 */
+	private async detectSteamLibraryPaths(
+		steamInstallPath: string,
+	): Promise<string[]> {
+		const fs = await import("node:fs");
+		const libraryFoldersPath = path.join(
+			steamInstallPath,
+			"steamapps",
+			"libraryfolders.vdf",
+		);
+		const libraryPaths: string[] = [steamInstallPath];
+
+		try {
+			if (fs.existsSync(libraryFoldersPath)) {
+				const vdfContent = await fs.promises.readFile(
+					libraryFoldersPath,
+					"utf-8",
+				);
+
+				// Simple VDF parsing to extract library paths
+				const pathMatches = vdfContent.match(/"path"\s+"([^"]+)"/g);
+				if (pathMatches) {
+					for (const match of pathMatches) {
+						const pathMatch = match.match(/"path"\s+"([^"]+)"/);
+						if (pathMatch?.[1]) {
+							const libraryPath = pathMatch[1].replace(/\\\\/g, "/");
+							if (
+								fs.existsSync(libraryPath) &&
+								!libraryPaths.includes(libraryPath)
+							) {
+								libraryPaths.push(libraryPath);
+							}
+						}
+					}
+				}
+
+				this.logger.debug("Detected Steam library paths", {
+					paths: libraryPaths,
+				});
+			}
+		} catch (error) {
+			this.logger.warn("Failed to parse Steam library folders", {
+				error: String(error),
+			});
+		}
+
+		return libraryPaths;
+	}
+
+	/**
+	 * Setup comprehensive Proton environment variables (based on Heroic's approach)
+	 */
+	private async setupProtonEnvironment(params: {
+		gameId: string;
+		compatDataPath: string;
+		steamInstallPath: string;
+		steamLibraryPaths: string[];
+		protonBuild: {
+			installPath: string;
+			variant: string;
+			version: string;
+			source?: string;
+		};
+		proton?: { winePrefix?: string; customArgs?: string[] };
+		environment?: Record<string, string>;
+		homeDir: string;
+	}): Promise<Record<string, string>> {
+		const {
+			gameId,
+			compatDataPath,
+			steamInstallPath,
+			steamLibraryPaths,
+			protonBuild,
+			proton,
+			environment,
+			// homeDir,
+		} = params;
+
+		// Create Wine prefix directory if it doesn't exist
+		const fs = await import("node:fs");
+		const winePrefix = proton?.winePrefix || path.join(compatDataPath, "pfx");
+
+		// Note: homeDir parameter is available for future extensibility
+
+		try {
+			if (!fs.existsSync(winePrefix)) {
+				await fs.promises.mkdir(winePrefix, { recursive: true });
+				this.logger.debug("Created Wine prefix directory", {
+					path: winePrefix,
+				});
+			}
+		} catch (error) {
+			this.logger.warn("Failed to create Wine prefix directory", {
+				error: String(error),
+				path: winePrefix,
+			});
+		}
+
+		// Build comprehensive environment variables
+		const protonEnvironment: Record<string, string> = {
+			// Base environment
+			...(this.options.defaultEnvironment || {}),
+			...(environment || {}),
+
+			// Essential Proton/Steam environment variables
+			STEAM_COMPAT_DATA_PATH: compatDataPath,
+			STEAM_COMPAT_CLIENT_INSTALL_PATH: steamInstallPath,
+			STEAM_COMPAT_INSTALL_PATH: protonBuild.installPath,
+
+			// Wine environment variables
+			WINEPREFIX: winePrefix,
+			WINEDEBUG: process.env.WINEDEBUG || "-all",
+
+			// Proton-specific environment variables
+			PROTON_USE_WINED3D: "1",
+			PROTON_NO_D3D11: "0",
+			PROTON_NO_D3D12: "0",
+			PROTON_FORCE_LARGE_ADDRESS_AWARE: "1",
+
+			// Steam library paths for compatibility
+			STEAM_COMPAT_MOUNTS: steamLibraryPaths.join(":"),
+
+			// Additional Wine/Proton variables for better compatibility
+			DXVK_HUD: process.env.DXVK_HUD || "",
+			VKD3D_CONFIG: process.env.VKD3D_CONFIG || "",
+
+			// Enable logging if debug mode is on (check if debug logging is enabled)
+			...(process.env.NODE_ENV === "development" && {
+				PROTON_LOG: "1",
+				WINEDEBUG: "+all",
+			}),
+		};
+
+		// Add custom Proton arguments if specified
+		if (proton?.customArgs && proton.customArgs.length > 0) {
+			protonEnvironment.PROTON_SET_GAME_DRIVE = "1";
+		}
+
+		// Set up WINESERVER path for proper Wine server management
+		const wineServerPath = path.join(
+			protonBuild.installPath,
+			"dist",
+			"bin",
+			"wineserver",
+		);
+		if (fs.existsSync(wineServerPath)) {
+			protonEnvironment.WINESERVER = wineServerPath;
+		}
+
+		this.logger.debug("Proton environment setup complete", {
+			gameId,
+			winePrefix,
+			compatDataPath,
+			steamLibraryCount: steamLibraryPaths.length,
+		});
+
+		return protonEnvironment;
+	}
+
+	/**
+	 * Enhanced Proton build detection across multiple Steam locations (inspired by Heroic)
+	 */
+	private async getEnhancedProtonBuilds(
+		steamInstallPath: string,
+		steamLibraryPaths: string[],
+	): Promise<
+		Array<{
+			variant: string;
+			version: string;
+			installPath: string;
+			source: string;
+		}>
+	> {
+		const fs = await import("node:fs");
+		const builds: Array<{
+			variant: string;
+			version: string;
+			installPath: string;
+			source: string;
+		}> = [];
+
+		// Get builds from ProtonManager first
+		if (this.protonManager) {
+			try {
+				const managerBuilds =
+					await this.protonManager.getInstalledProtonBuilds();
+				builds.push(
+					...managerBuilds.map((b) => ({ ...b, source: "proton-manager" })),
+				);
+			} catch (error) {
+				this.logger.warn("Failed to get builds from ProtonManager", {
+					error: String(error),
+				});
+			}
+		}
+
+		// Search for Proton installations in Steam compatibility tools directories
+		const compatToolsPaths = [
+			path.join(steamInstallPath, "compatibilitytools.d"),
+			...steamLibraryPaths.map((p) => path.join(p, "steamapps", "common")),
+		];
+
+		for (const compatPath of compatToolsPaths) {
+			try {
+				if (fs.existsSync(compatPath)) {
+					const entries = await fs.promises.readdir(compatPath, {
+						withFileTypes: true,
+					});
+
+					for (const entry of entries) {
+						if (entry.isDirectory()) {
+							const protonPath = path.join(compatPath, entry.name, "proton");
+							if (fs.existsSync(protonPath)) {
+								// Determine variant and version from directory name
+								const { variant, version } = this.parseProtonDirectoryName(
+									entry.name,
+								);
+
+								// Check if this build is already in our list
+								const existingBuild = builds.find(
+									(b) => b.variant === variant && b.version === version,
+								);
+
+								if (!existingBuild) {
+									builds.push({
+										variant,
+										version,
+										installPath: path.join(compatPath, entry.name),
+										source: "steam-compat-tools",
+									});
+								}
+							}
+						}
+					}
+				}
+			} catch (error) {
+				this.logger.debug("Failed to scan compatibility tools path", {
+					path: compatPath,
+					error: String(error),
+				});
+			}
+		}
+
+		this.logger.debug("Enhanced Proton build detection complete", {
+			totalBuilds: builds.length,
+			sources: [...new Set(builds.map((b) => b.source))],
+		});
+
+		return builds;
+	}
+
+	/**
+	 * Parse Proton directory name to extract variant and version
+	 */
+	private parseProtonDirectoryName(dirName: string): {
+		variant: string;
+		version: string;
+	} {
+		// Handle common Proton directory naming patterns
+		if (dirName.toLowerCase().includes("ge-proton")) {
+			return {
+				variant: "proton-ge",
+				version:
+					dirName.replace(/^GE-Proton/i, "").replace(/^-/, "") || dirName,
+			};
+		}
+
+		if (dirName.toLowerCase().includes("proton")) {
+			if (dirName.toLowerCase().includes("experimental")) {
+				return { variant: "proton-experimental", version: dirName };
+			}
+			return { variant: "proton", version: dirName };
+		}
+
+		// Default fallback
+		return { variant: "unknown", version: dirName };
+	}
+
+	/**
+	 * Setup compat data path with proper structure (based on Heroic's approach)
+	 */
+	private async setupCompatDataPath(
+		gameId: string,
+		steamInstallPath: string,
+		proton: { winePrefix?: string } | undefined,
+		homeDir: string,
+	): Promise<string> {
+		const fs = await import("node:fs");
+
+		// Use custom wine prefix if specified, otherwise use Steam-style compat data
+		if (proton?.winePrefix) {
+			return proton.winePrefix;
+		}
+
+		// Create Steam-style compat data path
+		const compatDataPath = path.join(
+			steamInstallPath,
+			"steamapps",
+			"compatdata",
+			gameId,
+		);
+
+		try {
+			// Ensure the directory structure exists
+			await fs.promises.mkdir(compatDataPath, { recursive: true });
+			this.logger.debug("Setup compat data path", { path: compatDataPath });
+		} catch (error) {
+			this.logger.warn("Failed to create compat data directory", {
+				error: String(error),
+				path: compatDataPath,
+			});
+			// Fallback to home directory if Steam path fails
+			const fallbackPath = path.join(
+				homeDir,
+				".local",
+				"share",
+				"game-launcher",
+				"compatdata",
+				gameId,
+			);
+			await fs.promises.mkdir(fallbackPath, { recursive: true });
+			return fallbackPath;
+		}
+
+		return compatDataPath;
+	}
+
+	/**
+	 * Verify Proton executable and setup environment (enhanced error handling)
+	 */
+	private async verifyAndSetupProtonEnvironment(
+		protonPath: string,
+		compatDataPath: string,
+		gameId: string,
+	): Promise<void> {
+		const fs = await import("node:fs");
+
+		// Verify Proton executable exists and is executable
+		if (!fs.existsSync(protonPath)) {
+			throw new Error(`Proton executable not found at ${protonPath}`);
+		}
+
+		try {
+			// Check if file is executable (Unix-like systems)
+			const stats = await fs.promises.stat(protonPath);
+			if (process.platform !== "win32" && !(stats.mode & 0o111)) {
+				this.logger.warn("Proton executable may not have execute permissions", {
+					path: protonPath,
+				});
+			}
+		} catch (error) {
+			this.logger.warn("Failed to check Proton executable permissions", {
+				error: String(error),
+				path: protonPath,
+			});
+		}
+
+		// Ensure compat data directory structure exists
+		try {
+			await fs.promises.mkdir(compatDataPath, { recursive: true });
+
+			// Create pfx directory for Wine prefix
+			const pfxPath = path.join(compatDataPath, "pfx");
+			await fs.promises.mkdir(pfxPath, { recursive: true });
+
+			this.logger.debug("Proton environment verification complete", {
+				gameId,
+				protonPath,
+				compatDataPath,
+				pfxPath,
+			});
+		} catch (error) {
+			throw new Error(`Failed to setup Proton environment: ${error}`);
+		}
+	}
+
+	/**
+	 * Build enhanced Proton launch arguments (inspired by Heroic's approach)
+	 */
+	private async buildProtonLaunchArgs(params: {
+		executable: string;
+		args: string[];
+		proton?: { customArgs?: string[] };
+		gameId: string;
+		compatDataPath: string;
+	}): Promise<string[]> {
+		const { executable, args, proton, gameId } = params;
+
+		// Base Proton command
+		const protonArgs = ["run"];
+
+		// Note: compatDataPath and gameId are available for future use
+
+		// Add Proton-specific arguments before the executable
+		if (proton?.customArgs?.length) {
+			// Filter out arguments that should come after the executable
+			const preExecArgs = proton.customArgs.filter(
+				(arg: string) =>
+					!arg.startsWith("--") ||
+					arg.includes("wrapper") ||
+					arg.includes("no-wine"),
+			);
+			protonArgs.push(...preExecArgs);
+		}
+
+		// Add the executable
+		protonArgs.push(executable);
+
+		// Add game arguments
+		if (args.length > 0) {
+			protonArgs.push(...args);
+		}
+
+		// Add post-executable custom arguments
+		if (proton?.customArgs && proton.customArgs.length > 0) {
+			const postExecArgs = proton.customArgs.filter(
+				(arg: string) =>
+					arg.startsWith("--") &&
+					!arg.includes("wrapper") &&
+					!arg.includes("no-wine"),
+			);
+			protonArgs.push(...postExecArgs);
+		}
+
+		this.logger.debug("Built Proton launch arguments", {
+			gameId,
+			protonArgs: protonArgs.join(" "),
+			executable,
+			originalArgs: args,
+		});
+
+		return protonArgs;
+	}
+
+	/**
 	 * Initialize the logging system based on configuration
 	 */
 	private initializeLogging(): void {
@@ -364,29 +833,55 @@ export class GameLauncher implements GameLauncherInterface {
 
 			// Get home directory for path expansion
 			const homeDir = require("node:os").homedir();
-			
-			// Expand tilde in executable path
-			const expandedExecutable = executable.startsWith('~') 
-				? executable.replace('~', homeDir)
-				: executable;
-			
-			// Launch the game with Proton
-			const protonArgs = [
-				"run",
-				expandedExecutable,
-				...(proton?.customArgs || []),
-				...args,
-			];
 
-			// Get installed Proton builds to find the executable path
-			const installedBuilds =
-				await this.protonManager.getInstalledProtonBuilds();
+			// Enhanced Steam installation detection (inspired by Heroic)
+			const steamInstallPath = await this.detectSteamInstallation(homeDir);
+			const steamLibraryPaths =
+				await this.detectSteamLibraryPaths(steamInstallPath);
+
+			// Enhanced compat data path setup (based on Heroic's approach)
+			const compatDataPath = await this.setupCompatDataPath(
+				gameId,
+				steamInstallPath,
+				proton?.winePrefix ? { winePrefix: proton.winePrefix } : undefined,
+				homeDir,
+			);
+
+			// Expand tilde in executable path
+			const expandedExecutable = executable.startsWith("~")
+				? executable.replace("~", homeDir)
+				: executable;
+
+			// Enhanced Proton launch arguments (inspired by Heroic's approach)
+			const protonLaunchParams: {
+				executable: string;
+				args: string[];
+				proton?: { customArgs?: string[] };
+				gameId: string;
+				compatDataPath: string;
+			} = {
+				executable: expandedExecutable,
+				args,
+				gameId,
+				compatDataPath,
+			};
+			if (proton?.customArgs) {
+				protonLaunchParams.proton = { customArgs: proton.customArgs };
+			}
+			const protonArgs = await this.buildProtonLaunchArgs(protonLaunchParams);
+
+			// Enhanced Proton build detection (inspired by Heroic)
+			const installedBuilds = await this.getEnhancedProtonBuilds(
+				steamInstallPath,
+				steamLibraryPaths,
+			);
 			this.logger.debug("Looking for Proton build:", {
 				variant,
 				selectedVersion,
 				availableBuilds: installedBuilds.map((b) => ({
 					variant: b.variant,
 					version: b.version,
+					source: b.source || "unknown",
 				})),
 			});
 			// Normalize version for comparison - handle both full names and parsed versions
@@ -422,56 +917,45 @@ export class GameLauncher implements GameLauncherInterface {
 			}
 			const protonPath = path.join(protonBuild.installPath, "proton");
 
-			// Set up environment variables for Proton
-			const compatDataPath =
-				proton?.winePrefix ||
-				path.join(
-					homeDir,
-					".steam",
-					"steam",
-					"steamapps",
-					"compatdata",
-					gameId,
-				);
+			// Enhanced Proton executable verification and prefix setup
+			await this.verifyAndSetupProtonEnvironment(
+				protonPath,
+				compatDataPath,
+				gameId,
+			);
 
-			// Verify the Proton executable exists and ensure compat data directory exists
-			const fs = await import("node:fs");
-			if (!fs.existsSync(protonPath)) {
-				throw new Error(`Proton executable not found at ${protonPath}`);
-			}
-
-			// Ensure compat data directory exists
-			if (!fs.existsSync(path.dirname(compatDataPath))) {
-				await fs.promises.mkdir(path.dirname(compatDataPath), {
-					recursive: true,
-				});
-			}
-			if (!fs.existsSync(compatDataPath)) {
-				await fs.promises.mkdir(compatDataPath, { recursive: true });
-			}
-
-			// Detect Steam installation path
-			const steamPaths = [
-				path.join(homeDir, '.steam', 'steam'),
-				path.join(homeDir, '.local', 'share', 'Steam'),
-				'/usr/share/steam',
-				'/opt/steam'
-			];
-			const steamInstallPath = steamPaths.find(p => fs.existsSync(p)) || steamPaths[0];
-			
-			const protonEnvironment = {
-				...(this.options.defaultEnvironment || {}),
-				...(environment || {}),
-				// Essential Proton environment variables
-				STEAM_COMPAT_DATA_PATH: compatDataPath,
-				STEAM_COMPAT_CLIENT_INSTALL_PATH: steamInstallPath || path.join(homeDir, '.steam', 'steam'),
-				// Add Wine prefix if specified
-				...(proton?.winePrefix && { WINEPREFIX: proton.winePrefix }),
-				// Add common Proton environment variables
-				PROTON_USE_WINED3D: "1",
-				PROTON_NO_D3D11: "0",
-				PROTON_NO_D3D12: "0",
+			// Enhanced environment variables setup (based on Heroic's approach)
+			const protonEnvParams: {
+				gameId: string;
+				compatDataPath: string;
+				steamInstallPath: string;
+				steamLibraryPaths: string[];
+				protonBuild: {
+					installPath: string;
+					variant: string;
+					version: string;
+					source?: string;
+				};
+				proton?: { winePrefix?: string; customArgs?: string[] };
+				environment?: Record<string, string>;
+				homeDir: string;
+			} = {
+				gameId,
+				compatDataPath,
+				steamInstallPath,
+				steamLibraryPaths,
+				protonBuild,
+				environment: environment || {},
+				homeDir,
 			};
+			if (proton && (proton.winePrefix || proton.customArgs)) {
+				protonEnvParams.proton = {
+					...(proton.winePrefix && { winePrefix: proton.winePrefix }),
+					...(proton.customArgs && { customArgs: proton.customArgs }),
+				};
+			}
+			const protonEnvironment =
+				await this.setupProtonEnvironment(protonEnvParams);
 
 			// Filter out undefined values for process options
 			const processOptions = {
@@ -516,25 +1000,29 @@ export class GameLauncher implements GameLauncherInterface {
 			// Enhanced error handling for different failure scenarios
 			if (error instanceof Error) {
 				// Handle privilege escalation specific errors
-				if (error.name === 'PrivilegeEscalationCancelled') {
+				if (error.name === "PrivilegeEscalationCancelled") {
 					this.logger.warn("Game launch cancelled by user", {
 						gameId,
 						reason: "User cancelled privilege escalation prompt",
 					});
-					throw new Error("Game launch cancelled. Administrator privileges are required to run games with Proton.");
-				} else if (error.name === 'PrivilegeEscalationFailed') {
+					throw new Error(
+						"Game launch cancelled. Administrator privileges are required to run games with Proton.",
+					);
+				} else if (error.name === "PrivilegeEscalationFailed") {
 					this.logger.error("Privilege escalation failed", {
 						gameId,
 						error: error.message,
 						suggestion: "Check system authentication settings",
 					});
-					throw new Error(`Failed to obtain administrator privileges: ${error.message}. Please check your system authentication settings.`);
+					throw new Error(
+						`Failed to obtain administrator privileges: ${error.message}. Please check your system authentication settings.`,
+					);
 				} else {
 					// General Proton launch errors
 					this.logger.error("Failed to launch game with Proton", {
 						gameId,
 						error: error.message,
-						errorType: error.name || 'Unknown',
+						errorType: error.name || "Unknown",
 					});
 					throw error;
 				}

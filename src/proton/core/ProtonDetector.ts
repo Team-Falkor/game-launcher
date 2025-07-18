@@ -157,24 +157,31 @@ export class ProtonDetector {
 				}
 
 				const entries = await fs.readdir(toolsPath, { withFileTypes: true });
-				console.log(`Found ${entries.length} entries in ${toolsPath}:`, entries.map(e => e.name));
+				console.log(
+					`Found ${entries.length} entries in ${toolsPath}:`,
+					entries.map((e) => e.name),
+				);
 
 				for (const entry of entries) {
 					if (entry.isDirectory()) {
-					const protonPath = path.join(toolsPath, entry.name);
-					console.log(`Analyzing directory: ${entry.name} at ${protonPath}`);
-					const build = await this.analyzeProtonDirectory(
-						protonPath,
-						"manual",
-					);
+						const protonPath = path.join(toolsPath, entry.name);
+						console.log(`Analyzing directory: ${entry.name} at ${protonPath}`);
+						const build = await this.analyzeProtonDirectory(
+							protonPath,
+							"manual",
+						);
 
-					if (build) {
-						console.log(`Found Proton build:`, { variant: build.variant, version: build.version, path: build.installPath });
-						builds.push(build);
-					} else {
-						console.log(`Not a valid Proton build: ${entry.name}`);
+						if (build) {
+							console.log(`Found Proton build:`, {
+								variant: build.variant,
+								version: build.version,
+								path: build.installPath,
+							});
+							builds.push(build);
+						} else {
+							console.log(`Not a valid Proton build: ${entry.name}`);
+						}
 					}
-				}
 				}
 			} catch (error) {
 				console.warn(
@@ -211,7 +218,9 @@ export class ProtonDetector {
 			// Extract version and variant information
 			const dirName = path.basename(protonPath);
 			const { version, variant } = this.parseProtonVersion(dirName);
-			console.log(`Parsed directory '${dirName}' as variant: ${variant}, version: ${version}`);
+			console.log(
+				`Parsed directory '${dirName}' as variant: ${variant}, version: ${version}`,
+			);
 
 			// Get directory stats
 			const stats = await fs.stat(protonPath);

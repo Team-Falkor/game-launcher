@@ -175,11 +175,14 @@ export class ProtonManager {
 		const installedBuilds =
 			await this.protonDetector.detectInstalledProtonBuilds();
 
-		console.log("Detected Proton builds:", installedBuilds.map(build => ({
-			variant: build.variant,
-			version: build.version,
-			installPath: build.installPath
-		})));
+		console.log(
+			"Detected Proton builds:",
+			installedBuilds.map((build) => ({
+				variant: build.variant,
+				version: build.version,
+				installPath: build.installPath,
+			})),
+		);
 
 		// Cache the results
 		this.cachedInstalledBuilds = installedBuilds;
