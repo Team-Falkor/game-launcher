@@ -1061,8 +1061,11 @@ export class GameLauncher implements GameLauncherInterface {
 
 				// If specific version not found, throw error immediately
 				if (installedBuilds.length === 0) {
+					const versionString = selectedVersion.includes(variant)
+						? selectedVersion
+						: `${variant} ${selectedVersion}`;
 					throw new Error(
-						`Proton ${variant} ${selectedVersion} not found. Please ensure it is installed in Steam compatibility tools directories.`,
+						`Proton ${versionString} not found. Please ensure it is installed in Steam compatibility tools directories.`,
 					);
 				}
 			} else {
