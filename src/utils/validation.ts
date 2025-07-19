@@ -1,5 +1,5 @@
 import { access, constants } from "node:fs/promises";
-import { platform } from "node:os";
+import { homedir, platform } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 import { SecurityEvent } from "@/@types";
 import { getSecurityAuditLogger } from "../logging";
@@ -16,6 +16,16 @@ function removeControlCharacters(input: string): string {
 			return !(code <= 0x1f || (code >= 0x7f && code <= 0x9f));
 		})
 		.join("");
+}
+
+/**
+ * Expands tilde (~) to home directory path
+ */
+function expandTildePath(path: string): string {
+	if (path.startsWith("~/") || path === "~") {
+		return path.replace(/^~/, homedir());
+	}
+	return path;
 }
 
 export async function validateExecutable(executable: string): Promise<void> {
@@ -37,11 +47,29 @@ export async function validateExecutable(executable: string): Promise<void> {
 		throw new Error("Executable path cannot be empty or whitespace only");
 	}
 
+	// Expand tilde to home directory if present
+	const expandedPath = expandTildePath(executable);
+
+	// Perform file system validation
 	try {
-		const resolvedPath = resolve(executable);
-		await access(resolvedPath, constants.F_OK | constants.X_OK);
+		const resolvedPath = resolve(expandedPath);
+
+		// First check if file exists
+		await access(resolvedPath, constants.F_OK);
+
+		// For cross-platform compatibility (e.g., .exe files on Linux with Proton),
+		// only check execute permissions on native executables
+		const isWindowsExeOnLinux =
+			platform() !== "win32" && resolvedPath.toLowerCase().endsWith(".exe");
+
+		if (!isWindowsExeOnLinux) {
+			// Check execute permissions for native executables
+			await access(resolvedPath, constants.X_OK);
+		}
+
 		auditLogger.logSecurityEvent(SecurityEvent.EXECUTABLE_VALIDATION, true, {
 			executable: resolvedPath,
+			crossPlatform: isWindowsExeOnLinux,
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
@@ -82,14 +110,18 @@ export namespace SecurityValidator {
 		// Normalize path to prevent traversal
 		const normalized = normalize(sanitized);
 
-		// Check for path traversal attempts
-		if (normalized.includes("..") || normalized.includes("~")) {
+		// Expand tilde to home directory if present
+		const expandedPath = expandTildePath(normalized);
+		const finalNormalized = normalize(expandedPath);
+
+		// Check for path traversal attempts (after tilde expansion)
+		if (finalNormalized.includes("..")) {
 			auditLogger.logSecurityEvent(
 				SecurityEvent.PATH_TRAVERSAL_ATTEMPT,
 				false,
 				{
 					originalPath: path,
-					normalizedPath: normalized,
+					normalizedPath: finalNormalized,
 					error: "Path traversal detected in executable path",
 				},
 			);
@@ -97,10 +129,10 @@ export namespace SecurityValidator {
 		}
 
 		// Validate path length
-		if (normalized.length > 4096) {
+		if (finalNormalized.length > 4096) {
 			auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 				originalPath: path,
-				normalizedPath: normalized,
+				normalizedPath: finalNormalized,
 				error: "Executable path too long",
 			});
 			throw new Error("Executable path too long");
@@ -133,13 +165,13 @@ export namespace SecurityValidator {
 				"LPT8",
 				"LPT9",
 			];
-			const fileName = normalized.split(sep).pop()?.toUpperCase();
+			const fileName = finalNormalized.split(sep).pop()?.toUpperCase();
 			if (fileName) {
 				const baseName = fileName.split(".")[0];
 				if (baseName && reservedNames.includes(baseName)) {
 					auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 						originalPath: path,
-						normalizedPath: normalized,
+						normalizedPath: finalNormalized,
 						reservedName: baseName,
 						error: "Reserved filename detected",
 					});
@@ -148,10 +180,10 @@ export namespace SecurityValidator {
 			}
 
 			// Check for invalid Windows characters (excluding colon which is valid in drive letters)
-			if (/[<>"|?*]/.test(normalized)) {
+			if (/[<>"|?*]/.test(finalNormalized)) {
 				auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, false, {
 					originalPath: path,
-					normalizedPath: normalized,
+					normalizedPath: finalNormalized,
 					error: "Invalid characters in Windows path",
 				});
 				throw new Error("Invalid characters in Windows path");
@@ -160,10 +192,10 @@ export namespace SecurityValidator {
 
 		auditLogger.logSecurityEvent(SecurityEvent.PATH_SANITIZATION, true, {
 			originalPath: path,
-			sanitizedPath: normalized,
+			sanitizedPath: finalNormalized,
 		});
 
-		return normalized;
+		return finalNormalized;
 	}
 
 	/**
@@ -197,14 +229,21 @@ export namespace SecurityValidator {
 			// Remove null bytes and control characters
 			const sanitized = removeControlCharacters(arg);
 
-			// Check for command injection patterns
-			const dangerousPatterns = [
-				/[;&|`$(){}[\]]/, // Shell metacharacters
+			// Check for actual command injection patterns (more specific validation)
+			// Allow legitimate game arguments like --fullscreen, -windowed, etc.
+			const actualInjectionPatterns = [
+				/;\s*\w+/, // Command chaining with semicolon
+				/\|\s*\w+/, // Pipe to another command
+				/&\s*\w+/, // Background execution
+				/`[^`]*`/, // Command substitution with backticks
+				/\$\([^)]*\)/, // Command substitution with $()
 				/\\x[0-9a-fA-F]{2}/, // Hex escape sequences
 				/\\[0-7]{1,3}/, // Octal escape sequences
+				/\${[^}]*}/, // Variable expansion
 			];
 
-			for (const pattern of dangerousPatterns) {
+			// Only flag if it's clearly an injection attempt, not legitimate args
+			for (const pattern of actualInjectionPatterns) {
 				if (pattern.test(sanitized)) {
 					auditLogger.logSecurityEvent(SecurityEvent.INJECTION_ATTEMPT, false, {
 						originalArgument: arg,
@@ -377,7 +416,7 @@ export namespace CommandSanitizer {
 			return `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 		} else {
 			// Unix: Use single quotes and escape single quotes
-			return `'${arg.replace(/'/g, "'\\''")}';`;
+			return `'${arg.replace(/'/g, "'\\''")}'`;
 		}
 	}
 
@@ -396,18 +435,42 @@ export namespace CommandSanitizer {
 		}
 
 		// Check for shell injection patterns (allow legitimate Windows command operators)
+		// First, check if the command contains properly quoted paths
+		const hasQuotedPaths = /["'][^"']*["']/.test(command);
+
+		// Check if this is a legitimate Proton command with environment exports
+		const isProtonCommand =
+			/export\s+\w+='[^']*';/.test(command) && command.includes("/proton");
+
 		const dangerousPatterns = [
-			/[;`${}]/, // Dangerous shell metacharacters (excluding & and | for Windows)
+			// Platform-specific dangerous metacharacters (forward slash is safe on Unix)
+			// Allow semicolons in Proton commands for environment variable exports
+			platform() === "win32"
+				? /[`${}/]/
+				: isProtonCommand
+					? /[`${}]/
+					: /[;`${}]/,
 			/\|\|/, // OR operator (potentially dangerous)
 			/\s(sudo|su)\s/, // Privilege escalation
 			/\s(rm|del)\s/, // File deletion
 			/\s(wget|curl)\s/, // Network access
 			/\s(nc|netcat)\s/, // Network tools
-			/\(.*\)/, // Parentheses (command substitution)
 		];
+
+		// Only check for command substitution if not dealing with quoted executable paths
+		if (!hasQuotedPaths) {
+			dangerousPatterns.push(/\(.*\)/); // Parentheses (command substitution)
+		}
 
 		for (const pattern of dangerousPatterns) {
 			if (pattern.test(command)) {
+				// Debug: Log the exact pattern that matched
+				console.error(`DEBUG: Command validation failed`);
+				console.error(`DEBUG: Command: ${command}`);
+				console.error(`DEBUG: Pattern matched: ${pattern.toString()}`);
+				console.error(`DEBUG: Platform: ${platform()}`);
+				console.error(`DEBUG: Has quoted paths: ${hasQuotedPaths}`);
+
 				if (pattern.toString().includes("sudo|su")) {
 					auditLogger.logSecurityEvent(
 						SecurityEvent.PRIVILEGE_ESCALATION,

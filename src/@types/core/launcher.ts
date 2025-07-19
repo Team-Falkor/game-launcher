@@ -35,7 +35,7 @@ export interface GameLauncherOptions {
 	/** Logging configuration */
 	logging?: LoggingOptions | undefined;
 	/** Proton configuration (Linux only) */
-	// proton?: ProtonOptions | undefined;
+	proton?: ProtonOptions | undefined;
 }
 
 /**
@@ -206,6 +206,8 @@ export interface LaunchGameOptions {
 	runAsAdmin?: boolean | undefined;
 	/** Additional metadata */
 	metadata?: Record<string, string | number | boolean | null> | undefined;
+	/** Proton-specific launch options (Linux only) */
+	proton?: ProtonLaunchOptions | undefined;
 }
 
 /**

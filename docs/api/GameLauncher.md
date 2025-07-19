@@ -111,6 +111,15 @@ interface LaunchGameOptions {
 }
 ```
 
+#### Executable Parameter
+
+The `executable` parameter should be a local file path:
+
+```typescript
+// Absolute path (recommended)
+executable: '/home/user/games/mygame.exe'
+```
+
 #### Returns
 
 - `Promise<string>` - The game ID of the launched process

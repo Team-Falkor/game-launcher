@@ -5,14 +5,18 @@
  * - Check if Proton installation is supported
  * - Install a specific Proton version with progress tracking
  * - Listen to download events and progress updates
+ * - Listen to extraction progress events with file-by-file tracking
  * - Check installation status
  * - Remove a Proton version
  * - Install the latest version of a variant
  */
 
-import type { ProtonVariant } from "../../@types";
+import type { ExtractionProgressEvent, ProtonVariant } from "../../@types";
 import { ProtonManager } from "../core";
-import type { DownloadProgressEvent, DownloadStatusEvent } from "../core/ProtonInstaller";
+import type {
+	DownloadProgressEvent,
+	DownloadStatusEvent,
+} from "../core/ProtonInstaller";
 
 /**
  * Example usage of Proton installation features
@@ -35,45 +39,68 @@ export async function demonstrateProtonInstallation(): Promise<void> {
 
 	// Example 1: Install a specific Proton version with progress tracking
 	console.log("\n🔄 Installing Proton GE 8-32 with progress tracking...");
-	
+
 	// Set up event listeners for download progress using convenience methods
 	protonManager.onInstallStatus((event: DownloadStatusEvent) => {
 		switch (event.status) {
-			case 'started':
-				console.log(`🚀 Download started for ${event.variant} ${event.version}`);
+			case "started":
+				console.log(
+					`🚀 Download started for ${event.variant} ${event.version}`,
+				);
 				break;
-			case 'downloading':
+			case "downloading":
 				console.log(`📥 ${event.message}`);
 				break;
-			case 'extracting':
+			case "extracting":
 				console.log(`📦 Extracting ${event.variant} ${event.version}...`);
 				break;
-			case 'completed':
+			case "completed":
 				console.log(`✅ ${event.message}`);
 				break;
-			case 'failed':
+			case "failed":
 				console.log(`❌ Download failed: ${event.error}`);
 				break;
 		}
 	});
-	
+
 	protonManager.onDownloadProgress((event: DownloadProgressEvent) => {
-		const progressBar = '█'.repeat(Math.floor(event.percentage / 5)) + '░'.repeat(20 - Math.floor(event.percentage / 5));
+		const progressBar =
+			"█".repeat(Math.floor(event.percentage / 5)) +
+			"░".repeat(20 - Math.floor(event.percentage / 5));
 		const speedMB = (event.speed / 1024 / 1024).toFixed(1);
 		const etaMin = Math.floor(event.estimatedTimeRemaining / 60);
 		const etaSec = Math.floor(event.estimatedTimeRemaining % 60);
-		
-		process.stdout.write(`\r📊 [${progressBar}] ${event.percentage.toFixed(1)}% | ${speedMB} MB/s | ETA: ${etaMin}:${etaSec.toString().padStart(2, '0')}`);
+
+		process.stdout.write(
+			`\r📊 [${progressBar}] ${event.percentage.toFixed(1)}% | ${speedMB} MB/s | ETA: ${etaMin}:${etaSec.toString().padStart(2, "0")}`,
+		);
 	});
-	
+
+	// Listen for extraction progress events
+	protonManager.onExtractionProgress((event: ExtractionProgressEvent) => {
+		const progressBar =
+			"█".repeat(Math.floor(event.percentage / 5)) +
+			"░".repeat(20 - Math.floor(event.percentage / 5));
+		const fileName =
+			event.currentFile.length > 30
+				? `...${event.currentFile.slice(-27)}`
+				: event.currentFile;
+
+		process.stdout.write(
+			`\r📦 [${progressBar}] ${event.percentage.toFixed(1)}% | ${event.entriesProcessed}/${event.totalEntries} files | ${fileName}`,
+		);
+	});
+
 	protonManager.onInstallComplete((event) => {
-		console.log(`\n🎉 Installation completed: ${event.variant} ${event.version}`);
+		console.log(
+			`\n🎉 Installation completed: ${event.variant} ${event.version}`,
+		);
 	});
-	
+
 	protonManager.onInstallError((event) => {
 		console.log(`\n💥 Installation error: ${event.error}`);
 	});
-	
+
 	const installResult = await protonManager.installProtonVersion({
 		variant: "proton-ge",
 		version: "GE-Proton8-32",
@@ -109,6 +136,7 @@ export async function demonstrateProtonInstallation(): Promise<void> {
 		console.log(
 			`✅ Successfully installed latest ${latestResult.variant}: ${latestResult.version}`,
 		);
+		console.log(`📁 Installation path: ${latestResult.installPath}`);
 	} else {
 		console.log(`❌ Failed to install latest version: ${latestResult.error}`);
 	}
@@ -170,6 +198,7 @@ export async function batchInstallExample(): Promise<void> {
 
 		if (result.success) {
 			console.log(`✅ ${variant} ${version} installed successfully`);
+			console.log(`📁 Installation path: ${result.installPath}`);
 		} else {
 			console.log(
 				`❌ ${variant} ${version} installation failed: ${result.error}`,

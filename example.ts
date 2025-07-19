@@ -7,10 +7,10 @@ async function demonstrateGameClassLaunch() {
 	const launcher = new GameLauncher({
 		maxConcurrentGames: 5,
 		enableProcessMonitoring: true,
-    logging: {
-      enabled: false,
-    }
-  });
+		logging: {
+			enabled: false,
+		},
+	});
 
 	// Set up global event listeners (still works as before)
 	launcher.on("launched", (event) => {
@@ -40,11 +40,19 @@ async function demonstrateGameClassLaunch() {
 		});
 
 		regularGame.on("closed", (event) => {
-			console.log(`[${regularGame.id}] Game closed with exit code: ${event.exitCode}`);
+			console.log(
+				`[${regularGame.id}] Game closed with exit code: ${event.exitCode}`,
+			);
 		});
 
 		regularGame.on("error", (event) => {
 			console.error(`[${regularGame.id}] Game error: ${event.error.message}`);
+		});
+
+		regularGame.on("output", (event) => {
+			console.log(
+				`[${regularGame.id}] Output (${event.type}): ${event.data.trim()}`,
+			);
 		});
 
 		// Example 2: Admin game launch
@@ -67,11 +75,15 @@ async function demonstrateGameClassLaunch() {
 		});
 
 		adminGame.on("output", (event) => {
-			console.log(`[${adminGame.id}] Output (${event.type}): ${event.data.trim()}`);
+			console.log(
+				`[${adminGame.id}] Output (${event.type}): ${event.data.trim()}`,
+			);
 		});
 
 		adminGame.on("statusChange", (event) => {
-			console.log(`[${adminGame.id}] Status: ${event.previousStatus} → ${event.currentStatus}`);
+			console.log(
+				`[${adminGame.id}] Status: ${event.previousStatus} → ${event.currentStatus}`,
+			);
 		});
 
 		console.log("Both games launched successfully!");
@@ -345,7 +357,7 @@ async function runExample() {
 
 			// Set up game-specific event listeners for the test game
 			testGame.on("launched", (event) => {
-				console.log(`[${testGame.id}] Test game launched successfully!`);
+				console.log(`[${testGame.id}] Test game launched successfully!`, event);
 			});
 
 			testGame.on("output", (event) => {
@@ -353,7 +365,9 @@ async function runExample() {
 			});
 
 			testGame.on("closed", (event) => {
-				console.log(`[${testGame.id}] Test game finished with exit code: ${event.exitCode}`);
+				console.log(
+					`[${testGame.id}] Test game finished with exit code: ${event.exitCode}`,
+				);
 			});
 
 			// Wait for the game to close naturally

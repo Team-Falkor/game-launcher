@@ -52,13 +52,7 @@ export interface DetectedProtonBuild {
 	isActive?: boolean; // Currently selected in Steam
 }
 
-export interface ProtonBuildOptions {
-	enableBuild?: boolean;
-	buildTimeout?: number; // milliseconds
-	makeJobs?: number; // parallel jobs for make
-	configureArgs?: string[];
-	makeArgs?: string[];
-}
+
 
 export interface ProtonInstallOptions {
 	version: string;
@@ -70,7 +64,6 @@ export interface ProtonInstallOptions {
 		| string;
 	installPath?: string;
 	force?: boolean; // Overwrite existing installation
-	buildOptions?: ProtonBuildOptions; // Build configuration for source code
 }
 
 export interface ProtonInstallResult {
@@ -91,6 +84,15 @@ export interface ProtonRemoveResult {
 	version: string;
 	variant: string;
 	error?: string;
+}
+
+export interface ExtractionProgressEvent {
+	variant: string;
+	version: string;
+	entriesProcessed: number;
+	totalEntries: number;
+	percentage: number;
+	currentFile: string;
 }
 
 export type ProtonVariant =

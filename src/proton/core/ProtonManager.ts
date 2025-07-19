@@ -26,6 +26,7 @@ export class ProtonManager {
 	private cachedInstalledBuilds: DetectedProtonBuild[] | null = null;
 	private cacheTimestamp: number = 0;
 	private installedCacheTimestamp: number = 0;
+	private lastScanType: 'quick' | 'detailed' | null = null;
 	private readonly cacheTimeout = 5 * 60 * 1000; // 5 minutes
 	private readonly isLinux: boolean;
 
@@ -156,46 +157,66 @@ export class ProtonManager {
 	 * Gets all installed Proton builds from the system
 	 * Returns empty array on non-Linux systems since Proton is Linux-only
 	 */
-	async getInstalledProtonBuilds(): Promise<DetectedProtonBuild[]> {
+	async getInstalledProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			return [];
 		}
 
 		const now = Date.now();
+		const cacheKey = quickScan ? 'quick' : 'detailed';
 
-		// Return cached results if still valid
+		// Return cached results if still valid (separate cache for quick vs detailed)
 		if (
 			this.cachedInstalledBuilds &&
-			now - this.installedCacheTimestamp < this.cacheTimeout
+			now - this.installedCacheTimestamp < this.cacheTimeout &&
+			this.lastScanType === cacheKey
 		) {
 			return this.cachedInstalledBuilds;
 		}
 
-		console.log("Detecting installed Proton builds...");
+		console.log(`Detecting installed Proton builds (${quickScan ? 'quick' : 'detailed'} scan)...`);
 		const installedBuilds =
-			await this.protonDetector.detectInstalledProtonBuilds();
+			await this.protonDetector.detectInstalledProtonBuilds(quickScan);
 
-		// Cache the results
+		console.log(
+			"Detected Proton builds:",
+			installedBuilds.map((build) => ({
+				variant: build.variant,
+				version: build.version,
+				installPath: build.installPath,
+			})),
+		);
+
+		// Cache the results with scan type
 		this.cachedInstalledBuilds = installedBuilds;
 		this.installedCacheTimestamp = now;
+		this.lastScanType = cacheKey;
 
 		return installedBuilds;
+	}
+
+	/**
+	 * Gets detailed information for Proton builds including accurate size calculations
+	 * This is slower but provides complete information
+	 */
+	async getDetailedProtonBuilds(): Promise<DetectedProtonBuild[]> {
+		return this.getInstalledProtonBuilds(false);
 	}
 
 	/**
 	 * Detects Steam-installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectSteamProtonBuilds(): Promise<DetectedProtonBuild[]> {
-		return this.protonDetector.detectSteamProtonBuilds();
+	async detectSteamProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+		return this.protonDetector.detectSteamProtonBuilds(quickScan);
 	}
 
 	/**
 	 * Detects manually installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectManualProtonBuilds(): Promise<DetectedProtonBuild[]> {
-		return this.protonDetector.detectManualProtonBuilds();
+	async detectManualProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+		return this.protonDetector.detectManualProtonBuilds(quickScan);
 	}
 
 	/**
@@ -398,7 +419,7 @@ export class ProtonManager {
 		const build = installedBuilds.find(
 			(b) => b.variant === variant && b.version === version,
 		);
-		
+
 		if (build) {
 			return {
 				installed: true,
@@ -406,7 +427,7 @@ export class ProtonManager {
 				installSource: build.installSource,
 			};
 		}
-		
+
 		return { installed: false };
 	}
 
@@ -422,45 +443,57 @@ export class ProtonManager {
 	 * Convenience method to add event listeners for download progress
 	 */
 	onDownloadProgress(
-		listener: (event: import('./ProtonInstaller').DownloadProgressEvent) => void,
+		listener: (
+			event: import("./ProtonInstaller").DownloadProgressEvent,
+		) => void,
 	): void {
-		this.protonInstaller.on('download-progress', listener);
+		this.protonInstaller.on("download-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation status changes
 	 */
 	onInstallStatus(
-		listener: (event: import('./ProtonInstaller').DownloadStatusEvent) => void,
+		listener: (event: import("./ProtonInstaller").DownloadStatusEvent) => void,
 	): void {
-		this.protonInstaller.on('download-status', listener);
+		this.protonInstaller.on("download-status", listener);
 	}
 
+
+
 	/**
-	 * Convenience method to add event listeners for build progress
+	 * Convenience method to add event listeners for extraction progress
 	 */
-	onBuildProgress(
-		listener: (event: import('./ProtonInstaller').BuildProgressEvent) => void,
+	onExtractionProgress(
+		listener: (event: import("../../@types").ExtractionProgressEvent) => void,
 	): void {
-		this.protonInstaller.on('build-progress', listener);
+		this.protonInstaller.on("extraction-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation completion
 	 */
 	onInstallComplete(
-		listener: (event: { variant: ProtonVariant; version: string; installPath: string }) => void,
+		listener: (event: {
+			variant: ProtonVariant;
+			version: string;
+			installPath: string;
+		}) => void,
 	): void {
-		this.protonInstaller.on('install-complete', listener);
+		this.protonInstaller.on("install-complete", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation errors
 	 */
 	onInstallError(
-		listener: (event: { variant: ProtonVariant; version: string; error: string }) => void,
+		listener: (event: {
+			variant: ProtonVariant;
+			version: string;
+			error: string;
+		}) => void,
 	): void {
-		this.protonInstaller.on('install-error', listener);
+		this.protonInstaller.on("install-error", listener);
 	}
 
 	/**

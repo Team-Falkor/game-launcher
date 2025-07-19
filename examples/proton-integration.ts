@@ -1,5 +1,6 @@
 import { GameLauncher } from '../src/index';
-import type { ProtonVariant, ProtonVersions } from '../src/@types';
+import type { ProtonVariant, ProtonVersions, ExtractionProgressEvent } from '../src/@types';
+import type { DownloadProgressEvent, DownloadStatusEvent } from '../src/proton/core/ProtonInstaller';
 
 /**
  * Example demonstrating Proton integration with GameLauncher
@@ -108,8 +109,29 @@ async function protonIntegrationExample() {
 					console.error("❌ Failed to launch game 2:", error);
 				}
 
-				// Example 3: Install a new Proton version
-				console.log("\n📦 Example 3: Installing a new Proton version");
+				// Example 3: Install a new Proton version with progress tracking
+				console.log("\n📦 Example 3: Installing a new Proton version with progress tracking");
+				
+				// Set up progress event listeners
+				protonManager.onDownloadProgress((progress) => {
+					console.log(`📥 Download: ${progress.percentage.toFixed(1)}% (${progress.bytesDownloaded}/${progress.totalBytes} bytes)`);
+				});
+				
+				protonManager.onExtractionProgress((progress) => {
+					console.log(`📦 Extraction: ${progress.percentage.toFixed(1)}% (${progress.entriesProcessed}/${progress.totalEntries} files)`);
+					if (progress.currentFile) {
+						console.log(`   Current: ${progress.currentFile}`);
+					}
+				});
+				
+				protonManager.onInstallComplete((result) => {
+					console.log(`✅ Installation completed: ${result.variant} ${result.version}`);
+				});
+				
+				protonManager.onInstallError((error) => {
+					console.error(`❌ Installation failed: ${error.error}`);
+				});
+				
 				try {
 					const installResult = await protonManager.installProtonVersion({
 						variant: "proton-ge",
