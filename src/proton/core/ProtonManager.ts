@@ -26,7 +26,7 @@ export class ProtonManager {
 	private cachedInstalledBuilds: DetectedProtonBuild[] | null = null;
 	private cacheTimestamp: number = 0;
 	private installedCacheTimestamp: number = 0;
-	private lastScanType: 'quick' | 'detailed' | null = null;
+	private lastScanType: "quick" | "detailed" | null = null;
 	private readonly cacheTimeout = 5 * 60 * 1000; // 5 minutes
 	private readonly isLinux: boolean;
 
@@ -157,13 +157,15 @@ export class ProtonManager {
 	 * Gets all installed Proton builds from the system
 	 * Returns empty array on non-Linux systems since Proton is Linux-only
 	 */
-	async getInstalledProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async getInstalledProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			return [];
 		}
 
 		const now = Date.now();
-		const cacheKey = quickScan ? 'quick' : 'detailed';
+		const cacheKey = quickScan ? "quick" : "detailed";
 
 		// Return cached results if still valid (separate cache for quick vs detailed)
 		if (
@@ -174,7 +176,9 @@ export class ProtonManager {
 			return this.cachedInstalledBuilds;
 		}
 
-		console.log(`Detecting installed Proton builds (${quickScan ? 'quick' : 'detailed'} scan)...`);
+		console.log(
+			`Detecting installed Proton builds (${quickScan ? "quick" : "detailed"} scan)...`,
+		);
 		const installedBuilds =
 			await this.protonDetector.detectInstalledProtonBuilds(quickScan);
 
@@ -207,7 +211,9 @@ export class ProtonManager {
 	 * Detects Steam-installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectSteamProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async detectSteamProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		return this.protonDetector.detectSteamProtonBuilds(quickScan);
 	}
 
@@ -215,7 +221,9 @@ export class ProtonManager {
 	 * Detects manually installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectManualProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async detectManualProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		return this.protonDetector.detectManualProtonBuilds(quickScan);
 	}
 
@@ -459,13 +467,13 @@ export class ProtonManager {
 		this.protonInstaller.on("download-status", listener);
 	}
 
-
-
 	/**
 	 * Convenience method to add event listeners for extraction progress
 	 */
 	onExtractionProgress(
-		listener: (event: import("../../@types").ExtractionProgressEvent) => void,
+		listener: (
+			event: import("./ProtonInstaller").ExtractionProgressEvent,
+		) => void,
 	): void {
 		this.protonInstaller.on("extraction-progress", listener);
 	}

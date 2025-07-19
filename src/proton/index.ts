@@ -23,4 +23,5 @@ export * from "./core";
 export type {
 	DownloadProgressEvent,
 	DownloadStatusEvent,
+	ExtractionProgressEvent,
 } from "./core/ProtonInstaller";
