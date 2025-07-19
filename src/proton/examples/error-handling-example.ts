@@ -12,7 +12,7 @@ import type {
 	DownloadProgressEvent,
 	DownloadStatusEvent,
 	ExtractionProgressEvent,
-} from "../core/ProtonInstaller";
+} from "@/@types";
 import { ProtonManager } from "../core/ProtonManager";
 
 export async function demonstrateErrorHandling(): Promise<void> {
