@@ -19,6 +19,7 @@ export interface ProtonVersionInfo {
 	description?: string;
 	isPrerelease?: boolean; // Whether this is a prerelease/experimental version
 	releaseName?: string; // GitHub release name for beta detection
+	isLatestVersion?: boolean; // Whether this is the latest version for its variant
 }
 
 // Re-export types from downloader (excluding GitHubRelease to avoid conflict)

@@ -110,29 +110,45 @@ export class ProtonVersionFetcher {
 			// Filter out draft releases
 			const publishedReleases = releases.filter((release) => !release.draft);
 
-			return publishedReleases.map((release) => {
-				const asset = release.assets.find(
-					(asset) =>
-						asset.name.endsWith(".tar.gz") && asset.name.includes("GE"),
-				);
+			const versions = publishedReleases.map((release) => {
+			const asset = release.assets.find(
+				(asset) =>
+					asset.name.endsWith(".tar.gz") && asset.name.includes("GE"),
+			);
 
-				const versionInfo: ProtonVersionInfo = {
-					version: release.tag_name,
-					installed: false, // Will be updated by detection system
-					releaseDate: new Date(release.published_at),
-					description: release.body?.split("\n")[0] || release.name,
-					isPrerelease: release.prerelease,
-				};
+			const versionInfo: ProtonVersionInfo = {
+				version: release.tag_name,
+				installed: false, // Will be updated by detection system
+				releaseDate: new Date(release.published_at),
+				description: release.body?.split("\n")[0] || release.name,
+				isPrerelease: release.prerelease,
+				isLatestVersion: false, // Will be set below
+			};
 
-				if (asset?.browser_download_url) {
-					versionInfo.downloadUrl = asset.browser_download_url;
+			if (asset?.browser_download_url) {
+				versionInfo.downloadUrl = asset.browser_download_url;
+			}
+			if (asset?.size) {
+				versionInfo.size = asset.size;
+			}
+
+			return versionInfo;
+		});
+
+		// Mark the latest version (most recent by date)
+		if (versions.length > 0) {
+			const sortedVersions = versions.sort((a, b) => {
+				if (a.releaseDate && b.releaseDate) {
+					return b.releaseDate.getTime() - a.releaseDate.getTime();
 				}
-				if (asset?.size) {
-					versionInfo.size = asset.size;
-				}
-
-				return versionInfo;
+				return 0;
 			});
+			if (sortedVersions[0]) {
+				sortedVersions[0].isLatestVersion = true;
+			}
+		}
+
+		return versions;
 		} catch (error) {
 			console.error("Failed to fetch Proton-GE versions:", error);
 			return [];
@@ -162,40 +178,56 @@ export class ProtonVersionFetcher {
 			// Filter out draft releases
 			const publishedReleases = releases.filter((release) => !release.draft);
 
-			return publishedReleases.map((release) => {
-				// Valve Proton releases don't have binary assets, only source code
-				// Look for binary assets first, fallback to tarball_url
-				const asset = release.assets.find((asset) =>
-					asset.name.endsWith(".tar.gz"),
-				);
+			const versions = publishedReleases.map((release) => {
+			// Valve Proton releases don't have binary assets, only source code
+			// Look for binary assets first, fallback to tarball_url
+			const asset = release.assets.find((asset) =>
+				asset.name.endsWith(".tar.gz"),
+			);
 
-				const versionInfo: ProtonVersionInfo = {
-					version: release.tag_name,
-					installed: false,
-					releaseDate: new Date(release.published_at),
-					description: release.body?.split("\n")[0] || release.name,
-					isPrerelease: release.prerelease,
-				};
+			const versionInfo: ProtonVersionInfo = {
+				version: release.tag_name,
+				installed: false,
+				releaseDate: new Date(release.published_at),
+				description: release.body?.split("\n")[0] || release.name,
+				isPrerelease: release.prerelease,
+				isLatestVersion: false, // Will be set below
+			};
 
-				// Store the release name for beta detection
-				const extendedVersionInfo: ExtendedProtonVersionInfo = {
-					...versionInfo,
-					releaseName: release.name,
-				};
+			// Store the release name for beta detection
+			const extendedVersionInfo: ExtendedProtonVersionInfo = {
+				...versionInfo,
+				releaseName: release.name,
+			};
 
-				// Use binary asset if available, otherwise use source tarball
-				if (asset?.browser_download_url) {
-					extendedVersionInfo.downloadUrl = asset.browser_download_url;
-					if (asset.size) {
-						extendedVersionInfo.size = asset.size;
-					}
-				} else if (release.tarball_url) {
-					// Use source tarball as fallback for Valve Proton
-					extendedVersionInfo.downloadUrl = release.tarball_url;
+			// Use binary asset if available, otherwise use source tarball
+			if (asset?.browser_download_url) {
+				extendedVersionInfo.downloadUrl = asset.browser_download_url;
+				if (asset.size) {
+					extendedVersionInfo.size = asset.size;
 				}
+			} else if (release.tarball_url) {
+				// Use source tarball as fallback for Valve Proton
+				extendedVersionInfo.downloadUrl = release.tarball_url;
+			}
 
-				return extendedVersionInfo;
+			return extendedVersionInfo;
+		});
+
+		// Mark the latest version (most recent by date)
+		if (versions.length > 0) {
+			const sortedVersions = versions.sort((a, b) => {
+				if (a.releaseDate && b.releaseDate) {
+					return b.releaseDate.getTime() - a.releaseDate.getTime();
+				}
+				return 0;
 			});
+			if (sortedVersions[0]) {
+				sortedVersions[0].isLatestVersion = true;
+			}
+		}
+
+		return versions;
 		} catch (error) {
 			console.error("Failed to fetch Valve Proton versions:", error);
 			return [];
@@ -223,29 +255,45 @@ export class ProtonVersionFetcher {
 			// Filter out draft releases
 			const publishedReleases = releases.filter((release) => !release.draft);
 
-			return publishedReleases.map((release) => {
-				const asset = release.assets.find(
-					(asset) =>
-						asset.name.endsWith(".tar.xz") && asset.name.includes("lutris"),
-				);
+			const versions = publishedReleases.map((release) => {
+			const asset = release.assets.find(
+				(asset) =>
+					asset.name.endsWith(".tar.xz") && asset.name.includes("lutris"),
+			);
 
-				const versionInfo: ProtonVersionInfo = {
-					version: release.tag_name,
-					installed: false, // Will be updated by detection system
-					releaseDate: new Date(release.published_at),
-					description: release.body?.split("\n")[0] || release.name,
-					isPrerelease: release.prerelease,
-				};
+			const versionInfo: ProtonVersionInfo = {
+				version: release.tag_name,
+				installed: false, // Will be updated by detection system
+				releaseDate: new Date(release.published_at),
+				description: release.body?.split("\n")[0] || release.name,
+				isPrerelease: release.prerelease,
+				isLatestVersion: false, // Will be set below
+			};
 
-				if (asset?.browser_download_url) {
-					versionInfo.downloadUrl = asset.browser_download_url;
+			if (asset?.browser_download_url) {
+				versionInfo.downloadUrl = asset.browser_download_url;
+			}
+			if (asset?.size) {
+				versionInfo.size = asset.size;
+			}
+
+			return versionInfo;
+		});
+
+		// Mark the latest version (most recent by date)
+		if (versions.length > 0) {
+			const sortedVersions = versions.sort((a, b) => {
+				if (a.releaseDate && b.releaseDate) {
+					return b.releaseDate.getTime() - a.releaseDate.getTime();
 				}
-				if (asset?.size) {
-					versionInfo.size = asset.size;
-				}
-
-				return versionInfo;
+				return 0;
 			});
+			if (sortedVersions[0]) {
+				sortedVersions[0].isLatestVersion = true;
+			}
+		}
+
+		return versions;
 		} catch (error) {
 			console.error("Failed to fetch Wine-GE versions:", error);
 			return [];
@@ -263,17 +311,49 @@ export class ProtonVersionFetcher {
 				return this.fetchProtonGEVersions();
 			case "proton-experimental": {
 				const valveVersions = await this.fetchValveProtonVersions();
-				return valveVersions.filter(
+				const filteredVersions = valveVersions.filter(
 					(v: ExtendedProtonVersionInfo) =>
 						v.isPrerelease || this.hasBetaIndicators(v),
 				);
+				// Reset isLatestVersion and mark the latest in filtered results
+				for (const v of filteredVersions) {
+					v.isLatestVersion = false;
+				}
+				if (filteredVersions.length > 0) {
+					const sortedFiltered = filteredVersions.sort((a, b) => {
+						if (a.releaseDate && b.releaseDate) {
+							return b.releaseDate.getTime() - a.releaseDate.getTime();
+						}
+						return 0;
+					});
+					if (sortedFiltered[0]) {
+						sortedFiltered[0].isLatestVersion = true;
+					}
+				}
+				return filteredVersions;
 			}
 			case "proton-stable": {
 				const valveVersions = await this.fetchValveProtonVersions();
-				return valveVersions.filter(
+				const filteredVersions = valveVersions.filter(
 					(v: ExtendedProtonVersionInfo) =>
 						!v.isPrerelease && !this.hasBetaIndicators(v),
 				);
+				// Reset isLatestVersion and mark the latest in filtered results
+				for (const v of filteredVersions) {
+					v.isLatestVersion = false;
+				}
+				if (filteredVersions.length > 0) {
+					const sortedFiltered = filteredVersions.sort((a, b) => {
+						if (a.releaseDate && b.releaseDate) {
+							return b.releaseDate.getTime() - a.releaseDate.getTime();
+						}
+						return 0;
+					});
+					if (sortedFiltered[0]) {
+						sortedFiltered[0].isLatestVersion = true;
+					}
+				}
+				return filteredVersions;
 			}
 			case "wine-ge":
 				return this.fetchWineGEVersions();
