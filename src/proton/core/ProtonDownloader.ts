@@ -325,82 +325,110 @@ export async function getAvailableVersions({
 	count = 100,
 }: GetVersionsProps): Promise<VersionInfo[]> {
 	const releases: Array<VersionInfo> = [];
+	const releasesByType = new Map<string, VersionInfo[]>();
 
 	for await (const repo of repositorys) {
 		try {
+			let fetchedReleases: VersionInfo[] = [];
+			let releaseType = "";
+
 			switch (repo) {
 				case Repositorys.WINEGE: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Wine-GE";
+					fetchedReleases = await fetchReleases({
 						url: WINEGE_URL,
-						type: "Wine-GE",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.PROTONGE: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "GE-Proton";
+					fetchedReleases = await fetchReleases({
 						url: PROTONGE_URL,
-						type: "GE-Proton",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.PROTON: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Proton";
+					fetchedReleases = await fetchReleases({
 						url: PROTON_URL,
-						type: "Proton",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.WINELUTRIS: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Wine-Lutris";
+					fetchedReleases = await fetchReleases({
 						url: WINELUTRIS_URL,
-						type: "Wine-Lutris",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.WINECROSSOVER: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Wine-Crossover";
+					fetchedReleases = await fetchReleases({
 						url: WINECROSSOVER_URL,
-						type: "Wine-Crossover",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.WINESTAGINGMACOS: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Wine-Staging-macOS";
+					fetchedReleases = await fetchReleases({
 						url: WINESTAGINGMACOS_URL,
-						type: "Wine-Staging-macOS",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				case Repositorys.GPTK: {
-					const fetchedReleases = await fetchReleases({
+					releaseType = "Game-Porting-Toolkit";
+					fetchedReleases = await fetchReleases({
 						url: GPTK_URL,
-						type: "Game-Porting-Toolkit",
+						type: releaseType,
 						count: count,
 					});
-					releases.push(...fetchedReleases);
 					break;
 				}
 				default: {
 					console.warn(
 						`Unknown and not supported repository key passed! Skip fetch for ${repo}`,
 					);
-					break;
+					continue;
 				}
 			}
+
+			// Group releases by type for latest version detection
+			if (!releasesByType.has(releaseType)) {
+				releasesByType.set(releaseType, []);
+			}
+			const typeReleases = releasesByType.get(releaseType);
+			if (typeReleases) {
+				typeReleases.push(...fetchedReleases);
+			}
+			releases.push(...fetchedReleases);
 		} catch (error) {
 			console.error(`Error fetching releases for ${repo}:`, error);
+		}
+	}
+
+	// Mark the latest version for each type
+	for (const [, typeReleases] of releasesByType) {
+		if (typeReleases.length > 0) {
+			// Sort by date (newest first) and mark the first one as latest
+			typeReleases.sort(
+				(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+			);
+			const latestRelease = typeReleases[0];
+			if (latestRelease) {
+				latestRelease.isLatestVersion = true;
+			}
 		}
 	}
 

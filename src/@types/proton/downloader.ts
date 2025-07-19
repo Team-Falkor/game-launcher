@@ -14,6 +14,7 @@ export interface VersionInfo {
 	disksize?: number;
 	checksum?: string;
 	installDir?: string;
+	isLatestVersion?: boolean;
 }
 
 /**
