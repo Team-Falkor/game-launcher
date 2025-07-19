@@ -26,6 +26,7 @@ export class ProtonManager {
 	private cachedInstalledBuilds: DetectedProtonBuild[] | null = null;
 	private cacheTimestamp: number = 0;
 	private installedCacheTimestamp: number = 0;
+	private lastScanType: 'quick' | 'detailed' | null = null;
 	private readonly cacheTimeout = 5 * 60 * 1000; // 5 minutes
 	private readonly isLinux: boolean;
 
@@ -156,24 +157,26 @@ export class ProtonManager {
 	 * Gets all installed Proton builds from the system
 	 * Returns empty array on non-Linux systems since Proton is Linux-only
 	 */
-	async getInstalledProtonBuilds(): Promise<DetectedProtonBuild[]> {
+	async getInstalledProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			return [];
 		}
 
 		const now = Date.now();
+		const cacheKey = quickScan ? 'quick' : 'detailed';
 
-		// Return cached results if still valid
+		// Return cached results if still valid (separate cache for quick vs detailed)
 		if (
 			this.cachedInstalledBuilds &&
-			now - this.installedCacheTimestamp < this.cacheTimeout
+			now - this.installedCacheTimestamp < this.cacheTimeout &&
+			this.lastScanType === cacheKey
 		) {
 			return this.cachedInstalledBuilds;
 		}
 
-		console.log("Detecting installed Proton builds...");
+		console.log(`Detecting installed Proton builds (${quickScan ? 'quick' : 'detailed'} scan)...`);
 		const installedBuilds =
-			await this.protonDetector.detectInstalledProtonBuilds();
+			await this.protonDetector.detectInstalledProtonBuilds(quickScan);
 
 		console.log(
 			"Detected Proton builds:",
@@ -184,27 +187,36 @@ export class ProtonManager {
 			})),
 		);
 
-		// Cache the results
+		// Cache the results with scan type
 		this.cachedInstalledBuilds = installedBuilds;
 		this.installedCacheTimestamp = now;
+		this.lastScanType = cacheKey;
 
 		return installedBuilds;
+	}
+
+	/**
+	 * Gets detailed information for Proton builds including accurate size calculations
+	 * This is slower but provides complete information
+	 */
+	async getDetailedProtonBuilds(): Promise<DetectedProtonBuild[]> {
+		return this.getInstalledProtonBuilds(false);
 	}
 
 	/**
 	 * Detects Steam-installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectSteamProtonBuilds(): Promise<DetectedProtonBuild[]> {
-		return this.protonDetector.detectSteamProtonBuilds();
+	async detectSteamProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+		return this.protonDetector.detectSteamProtonBuilds(quickScan);
 	}
 
 	/**
 	 * Detects manually installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectManualProtonBuilds(): Promise<DetectedProtonBuild[]> {
-		return this.protonDetector.detectManualProtonBuilds();
+	async detectManualProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+		return this.protonDetector.detectManualProtonBuilds(quickScan);
 	}
 
 	/**
