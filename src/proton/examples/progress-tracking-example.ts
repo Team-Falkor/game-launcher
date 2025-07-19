@@ -8,12 +8,13 @@
  * - Batch installations with progress aggregation
  */
 
-import type { ExtractionProgressEvent, ProtonVariant } from "../../@types";
-import { ProtonManager } from "../core";
 import type {
 	DownloadProgressEvent,
 	DownloadStatusEvent,
-} from "../core/ProtonInstaller";
+	ExtractionProgressEvent,
+	ProtonVariant,
+} from "../../@types";
+import { ProtonManager } from "../core";
 
 /**
  * Progress tracker class for managing installation progress

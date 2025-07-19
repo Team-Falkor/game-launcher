@@ -21,6 +21,23 @@ export interface ProtonVersionInfo {
 	releaseName?: string; // GitHub release name for beta detection
 }
 
+// Re-export types from downloader (excluding GitHubRelease to avoid conflict)
+export type {
+	FetchProps,
+	GetVersionsProps,
+	InstallProps,
+	UnzipProps,
+	VersionInfo,
+	WineManagerStatus,
+} from "./downloader";
+export { Repositorys } from "./downloader";
+
+// Re-export types from installer
+export * from "./installer";
+
+// Re-export types from version-fetcher (GitHubRelease from here takes precedence)
+export * from "./version-fetcher";
+
 /**
  * Extended version info used internally for filtering and processing
  */
@@ -52,8 +69,6 @@ export interface DetectedProtonBuild {
 	isActive?: boolean; // Currently selected in Steam
 }
 
-
-
 export interface ProtonInstallOptions {
 	version: string;
 	variant:
@@ -84,15 +99,6 @@ export interface ProtonRemoveResult {
 	version: string;
 	variant: string;
 	error?: string;
-}
-
-export interface ExtractionProgressEvent {
-	variant: string;
-	version: string;
-	entriesProcessed: number;
-	totalEntries: number;
-	percentage: number;
-	currentFile: string;
 }
 
 export type ProtonVariant =

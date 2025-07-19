@@ -1,6 +1,9 @@
 import os from "node:os";
 import type {
 	DetectedProtonBuild,
+	DownloadProgressEvent,
+	DownloadStatusEvent,
+	ExtractionProgressEvent,
 	ProtonInstallOptions,
 	ProtonInstallResult,
 	ProtonRemoveOptions,
@@ -450,20 +453,14 @@ export class ProtonManager {
 	/**
 	 * Convenience method to add event listeners for download progress
 	 */
-	onDownloadProgress(
-		listener: (
-			event: import("./ProtonInstaller").DownloadProgressEvent,
-		) => void,
-	): void {
+	onDownloadProgress(listener: (event: DownloadProgressEvent) => void): void {
 		this.protonInstaller.on("download-progress", listener);
 	}
 
 	/**
 	 * Convenience method to add event listeners for installation status changes
 	 */
-	onInstallStatus(
-		listener: (event: import("./ProtonInstaller").DownloadStatusEvent) => void,
-	): void {
+	onInstallStatus(listener: (event: DownloadStatusEvent) => void): void {
 		this.protonInstaller.on("download-status", listener);
 	}
 
@@ -471,9 +468,7 @@ export class ProtonManager {
 	 * Convenience method to add event listeners for extraction progress
 	 */
 	onExtractionProgress(
-		listener: (
-			event: import("./ProtonInstaller").ExtractionProgressEvent,
-		) => void,
+		listener: (event: ExtractionProgressEvent) => void,
 	): void {
 		this.protonInstaller.on("extraction-progress", listener);
 	}

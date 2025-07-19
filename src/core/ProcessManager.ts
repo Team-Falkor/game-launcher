@@ -12,6 +12,8 @@ import {
 	type ProcessManagerOptions,
 	type ProcessStartOptions,
 	SecurityEvent,
+	type ExtendedChildProcess as TypesExtendedChildProcess,
+	type SecurityAuditDetails as TypesSecurityAuditDetails,
 } from "../@types";
 import { ProcessCache } from "../cache";
 import { getSecurityAuditLogger } from "../logging";
@@ -25,8 +27,8 @@ import {
 } from "../utils/validation";
 import type { GameEventEmitter } from "./EventEmitter";
 
-// Security audit details interface to match SecurityAuditLogger expectations
-interface SecurityAuditDetails {
+// Use types from @types folder
+type SecurityAuditDetails = TypesSecurityAuditDetails & {
 	gameId?: string;
 	userId?: string;
 	sourceIp?: string;
@@ -45,12 +47,12 @@ interface SecurityAuditDetails {
 		| Record<string, string>
 		| null
 		| undefined;
-}
+};
 
 // Extended ChildProcess interface for admin processes
-interface ExtendedChildProcess extends ChildProcess {
+type ExtendedChildProcess = TypesExtendedChildProcess & {
 	actualPid?: number;
-}
+};
 
 export class ProcessManager implements ProcessManagerInterface {
 	private processes = new Map<string, ChildProcess>();

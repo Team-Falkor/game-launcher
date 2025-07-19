@@ -422,19 +422,20 @@ export class GameLauncher implements GameLauncherInterface {
 			try {
 				this.logger.debug("Falling back to ProtonManager detection");
 				const allBuilds = await this.protonManager.getInstalledProtonBuilds();
-				
+
 				// Look for exact version match
 				const exactMatch = allBuilds.find(
-					(b: DetectedProtonBuild) => b.variant === variant && b.version === version
+					(b: DetectedProtonBuild) =>
+						b.variant === variant && b.version === version,
 				);
-				
+
 				if (exactMatch) {
 					this.logger.debug("Found exact match via ProtonManager", {
 						variant: exactMatch.variant,
 						version: exactMatch.version,
 						installPath: exactMatch.installPath,
 					});
-					
+
 					builds.push({
 						variant: exactMatch.variant,
 						version: exactMatch.version,
@@ -443,20 +444,22 @@ export class GameLauncher implements GameLauncherInterface {
 					});
 					return builds;
 				}
-				
+
 				// Look for partial matches (for GE-Proton versions)
 				if (variant === "proton-ge") {
 					const partialMatches = allBuilds.filter((b: DetectedProtonBuild) => {
 						if (b.variant !== variant) return false;
-						
+
 						// Check if version contains the target version
 						const normalizedBuildVersion = b.version.toLowerCase();
 						const normalizedTargetVersion = version.toLowerCase();
-						
-						return normalizedBuildVersion.includes(normalizedTargetVersion) ||
-							   normalizedTargetVersion.includes(normalizedBuildVersion);
+
+						return (
+							normalizedBuildVersion.includes(normalizedTargetVersion) ||
+							normalizedTargetVersion.includes(normalizedBuildVersion)
+						);
 					});
-					
+
 					if (partialMatches.length > 0) {
 						const bestMatch = partialMatches[0];
 						if (bestMatch) {
@@ -465,7 +468,7 @@ export class GameLauncher implements GameLauncherInterface {
 								found: bestMatch.version,
 								installPath: bestMatch.installPath,
 							});
-							
+
 							builds.push({
 								variant: bestMatch.variant,
 								version: bestMatch.version,
@@ -476,14 +479,17 @@ export class GameLauncher implements GameLauncherInterface {
 						}
 					}
 				}
-				
+
 				this.logger.debug("No matching builds found via ProtonManager", {
 					totalBuilds: allBuilds.length,
-					variantBuilds: allBuilds.filter((b: DetectedProtonBuild) => b.variant === variant).length,
+					variantBuilds: allBuilds.filter(
+						(b: DetectedProtonBuild) => b.variant === variant,
+					).length,
 				});
-				
 			} catch (error) {
-				this.logger.warn("Error using ProtonManager fallback", { error: String(error) });
+				this.logger.warn("Error using ProtonManager fallback", {
+					error: String(error),
+				});
 			}
 		}
 
@@ -499,10 +505,10 @@ export class GameLauncher implements GameLauncherInterface {
 	): string[] {
 		// Generate multiple possible directory name patterns
 		const possibleNames: string[] = [];
-		
+
 		// First, try the version as-is (exact match)
 		possibleNames.push(version);
-		
+
 		// For proton-ge, handle various naming patterns
 		if (variant === "proton-ge") {
 			// If version doesn't start with GE-Proton, try adding it
@@ -510,7 +516,7 @@ export class GameLauncher implements GameLauncherInterface {
 				possibleNames.push(`GE-Proton${version}`);
 				possibleNames.push(`GE-Proton-${version}`);
 			}
-			
+
 			// If version starts with GE-Proton, also try without the prefix
 			if (version.toLowerCase().startsWith("ge-proton")) {
 				const withoutPrefix = version.replace(/^ge-proton[-_]?/i, "");
@@ -520,7 +526,7 @@ export class GameLauncher implements GameLauncherInterface {
 					possibleNames.push(`GE-Proton-${withoutPrefix}`);
 				}
 			}
-			
+
 			// Try common variations
 			const cleanVersion = version.replace(/^ge-proton[-_]?/i, "");
 			if (cleanVersion && cleanVersion !== version) {
@@ -528,7 +534,7 @@ export class GameLauncher implements GameLauncherInterface {
 				possibleNames.push(`proton-ge-${cleanVersion}`);
 			}
 		}
-		
+
 		// Remove duplicates and return
 		return [...new Set(possibleNames)];
 	}

@@ -1,23 +1,12 @@
 import type {
-	GameClosedEvent,
-	GameErrorEvent,
-	GameLaunchedEvent,
-	GameOutputEvent,
+	EventListener,
+	GameEventData,
 	GameProcessEvents,
 	GameProcessInfo,
-	GameStatusChangeEvent,
 	Game as IGame,
 	ProcessManagerInterface,
 } from "../@types";
 import type { GameEventEmitter } from "./EventEmitter";
-
-type GameEventData =
-	| GameLaunchedEvent
-	| GameClosedEvent
-	| GameErrorEvent
-	| GameOutputEvent
-	| GameStatusChangeEvent;
-type EventListener = (data: GameEventData) => void;
 
 /**
  * Represents a single game instance with its own event handling capabilities

@@ -11,12 +11,13 @@
  * - Install the latest version of a variant
  */
 
-import type { ExtractionProgressEvent, ProtonVariant } from "../../@types";
-import { ProtonManager } from "../core";
 import type {
 	DownloadProgressEvent,
 	DownloadStatusEvent,
-} from "../core/ProtonInstaller";
+	ExtractionProgressEvent,
+	ProtonVariant,
+} from "../../@types";
+import { ProtonManager } from "../core";
 
 /**
  * Example usage of Proton installation features

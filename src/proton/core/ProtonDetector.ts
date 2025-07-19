@@ -61,7 +61,9 @@ export class ProtonDetector {
 	 * Returns empty array on non-Linux systems since Proton is Linux-only
 	 * @param quickScan - If true, skips expensive size calculations for faster detection
 	 */
-	async detectInstalledProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async detectInstalledProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			console.log(
 				"Proton detection skipped: Proton is only available on Linux systems",
@@ -99,7 +101,9 @@ export class ProtonDetector {
 	 * Detects Steam-installed Proton builds
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectSteamProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async detectSteamProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			return [];
 		}
@@ -118,7 +122,8 @@ export class ProtonDetector {
 
 				// Filter Proton directories and process in parallel
 				const protonEntries = entries.filter(
-					entry => entry.isDirectory() && entry.name.toLowerCase().includes("proton")
+					(entry) =>
+						entry.isDirectory() && entry.name.toLowerCase().includes("proton"),
 				);
 
 				const buildPromises = protonEntries.map(async (entry) => {
@@ -127,7 +132,7 @@ export class ProtonDetector {
 				});
 
 				const builds = await Promise.all(buildPromises);
-				return builds.filter(build => build !== null);
+				return builds.filter((build) => build !== null);
 			} catch (error) {
 				console.warn(`Error scanning Steam path ${steamPath}:`, error);
 				return [];
@@ -143,7 +148,9 @@ export class ProtonDetector {
 	 * Detects manually installed Proton builds in compatibility tools directories
 	 * Returns empty array on non-Linux systems
 	 */
-	async detectManualProtonBuilds(quickScan = true): Promise<DetectedProtonBuild[]> {
+	async detectManualProtonBuilds(
+		quickScan = true,
+	): Promise<DetectedProtonBuild[]> {
 		if (!this.isLinux) {
 			return [];
 		}
@@ -168,7 +175,7 @@ export class ProtonDetector {
 				);
 
 				// Process directories in parallel batches for better performance
-				const directoryEntries = entries.filter(entry => entry.isDirectory());
+				const directoryEntries = entries.filter((entry) => entry.isDirectory());
 				const batchSize = 5; // Process 5 directories at a time
 				const pathBuilds: DetectedProtonBuild[] = [];
 
@@ -177,7 +184,7 @@ export class ProtonDetector {
 					const batchPromises = batch.map(async (entry) => {
 						const protonPath = path.join(toolsPath, entry.name);
 						console.log(`Analyzing directory: ${entry.name} at ${protonPath}`);
-						
+
 						const build = await this.analyzeProtonDirectory(
 							protonPath,
 							"manual",
@@ -198,7 +205,7 @@ export class ProtonDetector {
 					});
 
 					const batchResults = await Promise.all(batchPromises);
-					pathBuilds.push(...batchResults.filter(build => build !== null));
+					pathBuilds.push(...batchResults.filter((build) => build !== null));
 				}
 
 				return pathBuilds;
@@ -232,11 +239,12 @@ export class ProtonDetector {
 			const toolmanifest = path.join(protonPath, "toolmanifest.vdf");
 			const compatmanifest = path.join(protonPath, "compatibilitytool.vdf");
 
-			const [hasProtonExe, hasToolManifest, hasCompatManifest] = await Promise.all([
-				this.pathExists(protonExecutable),
-				this.pathExists(toolmanifest),
-				this.pathExists(compatmanifest),
-			]);
+			const [hasProtonExe, hasToolManifest, hasCompatManifest] =
+				await Promise.all([
+					this.pathExists(protonExecutable),
+					this.pathExists(toolmanifest),
+					this.pathExists(compatmanifest),
+				]);
 
 			if (!hasProtonExe && !hasToolManifest && !hasCompatManifest) {
 				return null;
@@ -251,9 +259,11 @@ export class ProtonDetector {
 
 			// Get directory stats
 			const stats = await fs.stat(protonPath);
-			
+
 			// Skip expensive size calculation for quick scans
-			const size = quickScan ? 0 : await this.getDirectorySizeOptimized(protonPath);
+			const size = quickScan
+				? 0
+				: await this.getDirectorySizeOptimized(protonPath);
 
 			return {
 				version,
@@ -345,20 +355,21 @@ export class ProtonDetector {
 		}
 	}
 
-
-
 	/**
 	 * Optimized directory size calculation with depth limit and timeout
 	 */
-	private async getDirectorySizeOptimized(dirPath: string, maxDepth = 2): Promise<number> {
+	private async getDirectorySizeOptimized(
+		dirPath: string,
+		maxDepth = 2,
+	): Promise<number> {
 		try {
 			// Use a timeout to prevent hanging on large directories
-			const timeoutPromise = new Promise<number>((_, reject) => 
-				setTimeout(() => reject(new Error('Size calculation timeout')), 5000)
+			const timeoutPromise = new Promise<number>((_, reject) =>
+				setTimeout(() => reject(new Error("Size calculation timeout")), 5000),
 			);
-			
+
 			const sizePromise = this.getDirectorySizeLimited(dirPath, maxDepth, 0);
-			
+
 			return await Promise.race([sizePromise, timeoutPromise]);
 		} catch {
 			// Fallback: estimate size based on directory entry count
@@ -369,7 +380,11 @@ export class ProtonDetector {
 	/**
 	 * Calculate directory size with depth limit
 	 */
-	private async getDirectorySizeLimited(dirPath: string, maxDepth: number, currentDepth: number): Promise<number> {
+	private async getDirectorySizeLimited(
+		dirPath: string,
+		maxDepth: number,
+		currentDepth: number,
+	): Promise<number> {
 		if (currentDepth >= maxDepth) {
 			return 0;
 		}
@@ -384,9 +399,13 @@ export class ProtonDetector {
 				const batch = entries.slice(i, i + batchSize);
 				const batchPromises = batch.map(async (entry) => {
 					const fullPath = path.join(dirPath, entry.name);
-					
+
 					if (entry.isDirectory()) {
-						return this.getDirectorySizeLimited(fullPath, maxDepth, currentDepth + 1);
+						return this.getDirectorySizeLimited(
+							fullPath,
+							maxDepth,
+							currentDepth + 1,
+						);
 					} else {
 						try {
 							const stats = await fs.stat(fullPath);
@@ -396,7 +415,7 @@ export class ProtonDetector {
 						}
 					}
 				});
-				
+
 				const batchSizes = await Promise.all(batchPromises);
 				totalSize += batchSizes.reduce((sum, size) => sum + size, 0);
 			}

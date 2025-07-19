@@ -4,28 +4,9 @@ import type {
 	ProtonVersionInfo,
 	ProtonVersions,
 } from "@/@types";
+// Import types from @types folder
+import type { GitHubRelease } from "../../@types/proton/version-fetcher";
 import { PROTON_API_URLS } from "../config/constants";
-
-/**
- * GitHub API response types
- */
-interface GitHubAsset {
-	name: string;
-	browser_download_url: string;
-	size: number;
-}
-
-interface GitHubRelease {
-	tag_name: string;
-	name: string;
-	body: string;
-	published_at: string;
-	prerelease: boolean;
-	draft: boolean;
-	assets: GitHubAsset[];
-	tarball_url?: string;
-	zipball_url?: string;
-}
 
 /**
  * Fetches available Proton versions from various sources

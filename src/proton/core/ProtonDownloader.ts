@@ -10,7 +10,17 @@ import {
 	unlinkSync,
 } from "node:fs";
 import * as tar from "tar";
-
+// Import types from @types folder
+import {
+	type FetchProps,
+	type GetVersionsProps,
+	type GitHubRelease,
+	type InstallProps,
+	Repositorys,
+	type UnzipProps,
+	type VersionInfo,
+	type WineManagerStatus,
+} from "../../@types/proton/downloader";
 import {
 	GPTK_URL,
 	PROTON_URL,
@@ -20,61 +30,17 @@ import {
 	WINELUTRIS_URL,
 	WINESTAGINGMACOS_URL,
 } from "../config/constants";
-
-export interface VersionInfo {
-	version: string;
-	type: string;
-	date: string;
-	download?: string;
-	downsize?: number;
-	disksize?: number;
-	checksum?: string;
-	installDir?: string;
-}
-
-export interface WineManagerStatus {
-	status: "idle" | "downloading" | "unzipping";
-	percentage?: number;
-	eta?: number;
-	avgSpeed?: number;
-}
-
-export enum Repositorys {
-	WINEGE = "WINEGE",
-	PROTONGE = "PROTONGE",
-	PROTON = "PROTON",
-	WINELUTRIS = "WINELUTRIS",
-	WINECROSSOVER = "WINECROSSOVER",
-	WINESTAGINGMACOS = "WINESTAGINGMACOS",
-	GPTK = "GPTK",
-}
-
-interface FetchProps {
-	url: string;
-	type: string;
-	count: number;
-}
-
-interface GetVersionsProps {
-	repositorys?: Repositorys[];
-	count?: number;
-}
-
-interface InstallProps {
-	versionInfo: VersionInfo;
-	installDir: string;
-	overwrite?: boolean;
-	onProgress?: (state: WineManagerStatus) => void;
-	abortSignal?: AbortSignal;
-}
-
-interface UnzipProps {
-	filePath: string;
-	unzipDir: string;
-	overwrite?: boolean;
-	onProgress: (state: WineManagerStatus) => void;
-	abortSignal?: AbortSignal | undefined;
-}
+// Re-export types for backward compatibility
+export type {
+	FetchProps,
+	GetVersionsProps,
+	GitHubRelease,
+	InstallProps,
+	UnzipProps,
+	VersionInfo,
+	WineManagerStatus,
+};
+export { Repositorys };
 
 function getVersionName(type: string, tag_name: string): string {
 	if (type.includes("Wine")) {
