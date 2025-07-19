@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
@@ -51,22 +50,10 @@ export interface DownloadStatusEvent {
 		| "retrying"
 		| "validating"
 		| "extracting"
-		| "building"
 		| "completed"
 		| "failed";
 	message?: string;
 	error?: string;
-}
-
-/**
- * Build progress event data
- */
-export interface BuildProgressEvent {
-	variant: string;
-	version: string;
-	step: "configure" | "make" | "install" | "error";
-	message: string;
-	percentage?: number;
 }
 
 /**
@@ -77,7 +64,7 @@ export interface BuildProgressEvent {
  * - 'download-progress': Emitted during download with progress information
  * - 'download-status': Emitted when download status changes
  * - 'extraction-progress': Emitted during archive extraction with progress information
- * - 'build-progress': Emitted during build steps
+
  * - 'install-progress': Emitted during installation steps
  * - 'install-complete': Emitted when installation completes
  * - 'install-error': Emitted when installation fails
@@ -287,13 +274,6 @@ export class ProtonInstaller extends EventEmitter {
 				options.variant,
 				options.version,
 			);
-
-			// Check if this is source code that needs building
-			const needsBuild = await this.detectSourceCode(installPath);
-			if (needsBuild && options.buildOptions?.enableBuild !== false) {
-				console.log("Source code detected, starting build process...");
-				await this.buildFromSource(installPath, options);
-			}
 
 			// Emit completion event
 			this.emit("download-status", {
@@ -722,14 +702,6 @@ export class ProtonInstaller extends EventEmitter {
 			throw new Error(`Extraction failed: ${String(error)}`);
 		}
 
-		// Check if this is source code that needs building
-		const isSourceCode = await this.detectSourceCode(installPath);
-		if (isSourceCode) {
-			// This is source code, we'll build it later in the main installation flow
-			console.log("Detected source code, will build after extraction");
-			return;
-		}
-
 		// For binary releases, verify extraction was successful
 		const protonExe = path.join(installPath, "proton");
 		if (!(await this.pathExists(protonExe))) {
@@ -757,18 +729,22 @@ export class ProtonInstaller extends EventEmitter {
 
 			// Find the exact version match - try both full version and shortened version
 			let versionInfo = versions.find((v) => v.version === options.version);
-			
+
 			// If not found with exact match, try to find by shortened version for backward compatibility
 			if (!versionInfo && options.variant === "proton-ge") {
 				// For GE-Proton, also try matching against shortened version (e.g., "10-9" matches "GE-Proton10-9")
 				versionInfo = versions.find((v) => {
-					const shortVersion = v.version.replace(/^(ge-)?proton-?/i, "").replace(/^ge-?/i, "");
+					const shortVersion = v.version
+						.replace(/^(ge-)?proton-?/i, "")
+						.replace(/^ge-?/i, "");
 					return shortVersion === options.version;
 				});
 			} else if (!versionInfo && options.variant === "wine-ge") {
 				// For Wine-GE, also try matching against shortened version
 				versionInfo = versions.find((v) => {
-					const shortVersion = v.version.replace(/wine-?ge-?/i, "").replace(/^ge-?/i, "");
+					const shortVersion = v.version
+						.replace(/wine-?ge-?/i, "")
+						.replace(/^ge-?/i, "");
 					return shortVersion === options.version;
 				});
 			}
@@ -893,465 +869,6 @@ export class ProtonInstaller extends EventEmitter {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Detects if extracted content is source code that needs building
-	 */
-	private async detectSourceCode(installPath: string): Promise<boolean> {
-		try {
-			// Check for common build files
-			const buildFiles = [
-				"Makefile",
-				"makefile",
-				"configure.sh",
-				"configure",
-				"build.sh",
-				"CMakeLists.txt",
-			];
-
-			for (const file of buildFiles) {
-				if (await this.pathExists(path.join(installPath, file))) {
-					return true;
-				}
-			}
-
-			// Check for source directories
-			const sourceDirs = ["src", "wine", "dxvk", "docker"];
-			for (const dir of sourceDirs) {
-				if (await this.pathExists(path.join(installPath, dir))) {
-					return true;
-				}
-			}
-
-			return false;
-		} catch {
-			return false;
-		}
-	}
-
-	/**
-	 * Builds Proton from source code
-	 */
-	private async buildFromSource(
-		installPath: string,
-		options: ProtonInstallOptions,
-	): Promise<void> {
-		const buildOptions = options.buildOptions || {};
-		const timeout = buildOptions.buildTimeout || 3600000; // 1 hour default
-		const makeJobs = buildOptions.makeJobs || os.cpus().length;
-
-		// Validate build environment
-		await this.validateBuildEnvironment(installPath);
-
-		this.emit("download-status", {
-			variant: options.variant,
-			version: options.version,
-			status: "building",
-			message: "Building from source...",
-		} as DownloadStatusEvent);
-
-		this.emit("build-progress", {
-			variant: options.variant,
-			version: options.version,
-			step: "configure",
-			message: `Starting build process with ${makeJobs} parallel jobs, timeout: ${timeout}ms`,
-		} as BuildProgressEvent);
-
-		try {
-			// Step 1: Configure
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step: "configure",
-				message: "Starting configure step...",
-			} as BuildProgressEvent);
-
-			await this.runBuildStep(installPath, "configure", options, timeout);
-
-			// Step 2: Make
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step: "make",
-				message: "Starting compilation step...",
-			} as BuildProgressEvent);
-
-			await this.runBuildStep(installPath, "make", options, timeout, [
-				"-j",
-				makeJobs.toString(),
-				...(buildOptions.makeArgs || []),
-			]);
-
-			// Step 3: Install
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step: "install",
-				message: "Starting install step...",
-			} as BuildProgressEvent);
-
-			await this.runBuildStep(installPath, "install", options, timeout, [
-				"install",
-			]);
-
-			// Verify build success
-			await this.validateBuildOutput(installPath);
-
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step: "install",
-				message: "Build completed successfully!",
-			} as BuildProgressEvent);
-		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : String(error);
-
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step: "error",
-				message: `Build failed: ${errorMessage}`,
-			} as BuildProgressEvent);
-
-			throw new Error(
-				`Build failed: ${errorMessage}\n\nTroubleshooting tips:\n- Ensure all build dependencies are installed\n- Check available disk space\n- Try reducing parallel jobs with buildOptions.makeJobs\n- Increase timeout with buildOptions.buildTimeout`,
-			);
-		}
-	}
-
-	/**
-	 * Validates the build environment before starting
-	 */
-	private async validateBuildEnvironment(installPath: string): Promise<void> {
-		// Check if directory exists and is readable
-		try {
-			const stats = await fs.stat(installPath);
-			if (!stats.isDirectory()) {
-				throw new Error(`Install path is not a directory: ${installPath}`);
-			}
-		} catch {
-			throw new Error(`Cannot access install directory: ${installPath}`);
-		}
-
-		// Check for basic build tools
-		const requiredTools = ["make", "gcc", "g++"];
-		for (const tool of requiredTools) {
-			try {
-				const { spawn } = await import("node:child_process");
-				const result = await new Promise<boolean>((resolve) => {
-					const child = spawn("which", [tool], { stdio: "ignore" });
-					child.on("close", (code) => resolve(code === 0));
-					child.on("error", () => resolve(false));
-				});
-
-				if (!result) {
-					console.warn(
-						`Warning: Build tool '${tool}' not found. Build may fail.`,
-					);
-				}
-			} catch {
-				// Ignore tool check errors
-			}
-		}
-	}
-
-	/**
-	 * Validates the build output after completion
-	 */
-	private async validateBuildOutput(installPath: string): Promise<void> {
-		// For Valve Proton, check build directory first
-		const buildDir = path.join(installPath, "build");
-		const checkBuildDir = await this.pathExists(buildDir);
-
-		// Determine where to look for files
-		const searchPath = checkBuildDir ? buildDir : installPath;
-
-		// Check for common Proton files
-		const expectedFiles = ["proton", "user_settings.py"];
-		const missingFiles: string[] = [];
-
-		for (const file of expectedFiles) {
-			const filePath = path.join(searchPath, file);
-			if (!(await this.pathExists(filePath))) {
-				// For build directory, also check root directory as fallback
-				if (checkBuildDir) {
-					const fallbackPath = path.join(installPath, file);
-					if (!(await this.pathExists(fallbackPath))) {
-						missingFiles.push(file);
-					}
-				} else {
-					missingFiles.push(file);
-				}
-			}
-		}
-
-		if (missingFiles.length > 0) {
-			throw new Error(
-				`Build appears incomplete. Missing expected files: ${missingFiles.join(", ")}`,
-			);
-		}
-
-		// Check if proton executable is actually executable
-		let protonPath = path.join(searchPath, "proton");
-
-		// If not found in search path and we're checking build dir, try root
-		if (checkBuildDir && !(await this.pathExists(protonPath))) {
-			protonPath = path.join(installPath, "proton");
-		}
-
-		try {
-			const stats = await fs.stat(protonPath);
-			if (!(stats.mode & 0o111)) {
-				// Make it executable
-				await fs.chmod(protonPath, stats.mode | 0o755);
-			}
-		} catch (error) {
-			throw new Error(
-				`Failed to verify proton executable: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
-	}
-
-	/**
-	 * Runs a build step (configure, make, or install)
-	 */
-	private async runBuildStep(
-		installPath: string,
-		step: "configure" | "make" | "install",
-		options: ProtonInstallOptions,
-		timeout: number,
-		args: string[] = [],
-	): Promise<void> {
-		// Determine command and args before creating Promise
-		let command: string;
-		let commandArgs: string[] = [];
-		let workingDirectory = installPath;
-
-		switch (step) {
-			case "configure": {
-				// Check if this is Valve Proton (requires out-of-tree build)
-				const isValveProton =
-					(await this.pathExists(path.join(installPath, "configure.sh"))) &&
-					(options.variant === "proton-stable" ||
-						options.variant === "proton-experimental");
-
-				if (isValveProton) {
-					// Create build directory for out-of-tree build
-					const buildDir = path.join(installPath, "build");
-					await fs.mkdir(buildDir, { recursive: true });
-					workingDirectory = buildDir;
-					command = "../configure.sh";
-					commandArgs = options.buildOptions?.configureArgs || [];
-
-					this.emit("build-progress", {
-						variant: options.variant,
-						version: options.version,
-						step,
-						message: `Creating out-of-tree build in ${buildDir}`,
-					} as BuildProgressEvent);
-				} else {
-					// Try different configure methods for other variants
-					if (await this.pathExists(path.join(installPath, "configure.sh"))) {
-						command = "./configure.sh";
-					} else if (
-						await this.pathExists(path.join(installPath, "configure"))
-					) {
-						command = "./configure";
-					} else {
-						// Skip configure if no configure script found
-						this.emit("build-progress", {
-							variant: options.variant,
-							version: options.version,
-							step,
-							message: "No configure script found, skipping configure step",
-						} as BuildProgressEvent);
-						return;
-					}
-					commandArgs = options.buildOptions?.configureArgs || [];
-				}
-				break;
-			}
-			case "make": {
-				// For Valve Proton, check Makefile in build directory
-				const buildDir = path.join(installPath, "build");
-				if (
-					(await this.pathExists(buildDir)) &&
-					(await this.pathExists(path.join(buildDir, "Makefile")))
-				) {
-					workingDirectory = buildDir;
-				} else if (
-					!(await this.pathExists(path.join(installPath, "Makefile"))) &&
-					!(await this.pathExists(path.join(installPath, "makefile")))
-				) {
-					throw new Error(
-						"No Makefile found. The configure step may have failed or this may not be a buildable source package.",
-					);
-				}
-				command = "make";
-				commandArgs = args;
-				break;
-			}
-			case "install": {
-				// For Valve Proton, install from build directory
-				const installBuildDir = path.join(installPath, "build");
-				if (
-					(await this.pathExists(installBuildDir)) &&
-					(await this.pathExists(path.join(installBuildDir, "Makefile")))
-				) {
-					workingDirectory = installBuildDir;
-				}
-				command = "make";
-				commandArgs = args;
-				break;
-			}
-		}
-
-		return new Promise((resolve, reject) => {
-			this.emit("build-progress", {
-				variant: options.variant,
-				version: options.version,
-				step,
-				message: `Running ${command} ${commandArgs.join(" ")}`,
-			} as BuildProgressEvent);
-
-			const child = spawn(command, commandArgs, {
-				cwd: workingDirectory,
-				stdio: ["ignore", "pipe", "pipe"],
-				shell: true,
-			});
-
-			let errorOutput = "";
-			let stdoutBuffer = "";
-			let hasOutput = false;
-
-			// Set up a heartbeat to detect if process is stuck
-			let lastOutputTime = Date.now();
-			const heartbeatInterval = setInterval(() => {
-				const now = Date.now();
-				if (now - lastOutputTime > 300000) {
-					// 5 minutes without output
-					this.emit("build-progress", {
-						variant: options.variant,
-						version: options.version,
-						step,
-						message: `Build step '${step}' appears to be stuck (no output for 5 minutes)`,
-					} as BuildProgressEvent);
-					lastOutputTime = now; // Reset to avoid spam
-				}
-			}, 60000); // Check every minute
-
-			child.stdout?.on("data", (data) => {
-				hasOutput = true;
-				lastOutputTime = Date.now();
-				stdoutBuffer += data.toString();
-
-				// Emit progress updates for verbose output
-				const lines = data.toString().split("\n");
-				for (const line of lines) {
-					if (line.trim()) {
-						this.emit("build-progress", {
-							variant: options.variant,
-							version: options.version,
-							step,
-							message: line.trim(),
-						} as BuildProgressEvent);
-					}
-				}
-			});
-
-			child.stderr?.on("data", (data) => {
-				hasOutput = true;
-				lastOutputTime = Date.now();
-				errorOutput += data.toString();
-
-				// Also emit stderr as build progress for real-time feedback
-				const lines = data.toString().split("\n");
-				for (const line of lines) {
-					if (line.trim()) {
-						this.emit("build-progress", {
-							variant: options.variant,
-							version: options.version,
-							step,
-							message: `[STDERR] ${line.trim()}`,
-						} as BuildProgressEvent);
-					}
-				}
-			});
-
-			const timer = setTimeout(() => {
-				clearInterval(heartbeatInterval);
-				child.kill("SIGTERM");
-
-				// Give process 5 seconds to terminate gracefully
-				setTimeout(() => {
-					if (!child.killed) {
-						child.kill("SIGKILL");
-					}
-				}, 5000);
-
-				reject(
-					new Error(
-						`Build step '${step}' timed out after ${timeout}ms. Last output: ${stdoutBuffer.slice(-500)}`,
-					),
-				);
-			}, timeout);
-
-			child.on("close", (code, signal) => {
-				clearTimeout(timer);
-				clearInterval(heartbeatInterval);
-
-				if (signal) {
-					reject(
-						new Error(
-							`Build step '${step}' was terminated by signal ${signal}`,
-						),
-					);
-					return;
-				}
-
-				if (code === 0) {
-					this.emit("build-progress", {
-						variant: options.variant,
-						version: options.version,
-						step,
-						message: `Build step '${step}' completed successfully`,
-					} as BuildProgressEvent);
-					resolve();
-				} else {
-					const errorMsg = errorOutput.trim() || "No error details available";
-					const lastStdout = stdoutBuffer.slice(-1000); // Last 1000 chars of stdout
-					reject(
-						new Error(
-							`Build step '${step}' failed with exit code ${code}.\nError output: ${errorMsg}\nLast stdout: ${lastStdout}`,
-						),
-					);
-				}
-			});
-
-			child.on("error", (error) => {
-				clearTimeout(timer);
-				clearInterval(heartbeatInterval);
-				reject(
-					new Error(
-						`Failed to start build step '${step}': ${error.message}. Make sure required build tools are installed.`,
-					),
-				);
-			});
-
-			// Handle process not starting within reasonable time
-			setTimeout(() => {
-				if (!hasOutput && !child.killed) {
-					this.emit("build-progress", {
-						variant: options.variant,
-						version: options.version,
-						step,
-						message: `Build step '${step}' started but no output yet. This may take a while...`,
-					} as BuildProgressEvent);
-				}
-			}, 30000); // 30 seconds
-		});
 	}
 
 	/**
