@@ -1,6 +1,7 @@
 import path from "node:path";
 import { validateGameId } from "@/utils/validation";
 import type {
+	DetectedProtonBuild,
 	GameLauncherInterface,
 	GameLauncherOptions,
 	GameProcessEvents,
@@ -409,11 +410,82 @@ export class GameLauncher implements GameLauncherInterface {
 			}
 		}
 
-		this.logger.debug("Specific Proton build not found", {
+		this.logger.debug("Specific Proton build not found in direct search", {
 			variant,
 			version,
 			searchedPaths: compatToolsPaths,
+			possibleDirNames,
 		});
+
+		// Fallback: Use ProtonManager to get all builds and filter
+		if (this.protonManager) {
+			try {
+				this.logger.debug("Falling back to ProtonManager detection");
+				const allBuilds = await this.protonManager.getInstalledProtonBuilds();
+				
+				// Look for exact version match
+				const exactMatch = allBuilds.find(
+					(b: DetectedProtonBuild) => b.variant === variant && b.version === version
+				);
+				
+				if (exactMatch) {
+					this.logger.debug("Found exact match via ProtonManager", {
+						variant: exactMatch.variant,
+						version: exactMatch.version,
+						installPath: exactMatch.installPath,
+					});
+					
+					builds.push({
+						variant: exactMatch.variant,
+						version: exactMatch.version,
+						installPath: exactMatch.installPath,
+						source: exactMatch.installSource || "proton-manager",
+					});
+					return builds;
+				}
+				
+				// Look for partial matches (for GE-Proton versions)
+				if (variant === "proton-ge") {
+					const partialMatches = allBuilds.filter((b: DetectedProtonBuild) => {
+						if (b.variant !== variant) return false;
+						
+						// Check if version contains the target version
+						const normalizedBuildVersion = b.version.toLowerCase();
+						const normalizedTargetVersion = version.toLowerCase();
+						
+						return normalizedBuildVersion.includes(normalizedTargetVersion) ||
+							   normalizedTargetVersion.includes(normalizedBuildVersion);
+					});
+					
+					if (partialMatches.length > 0) {
+						const bestMatch = partialMatches[0];
+						if (bestMatch) {
+							this.logger.debug("Found partial match via ProtonManager", {
+								requested: version,
+								found: bestMatch.version,
+								installPath: bestMatch.installPath,
+							});
+							
+							builds.push({
+								variant: bestMatch.variant,
+								version: bestMatch.version,
+								installPath: bestMatch.installPath,
+								source: bestMatch.installSource || "proton-manager",
+							});
+							return builds;
+						}
+					}
+				}
+				
+				this.logger.debug("No matching builds found via ProtonManager", {
+					totalBuilds: allBuilds.length,
+					variantBuilds: allBuilds.filter((b: DetectedProtonBuild) => b.variant === variant).length,
+				});
+				
+			} catch (error) {
+				this.logger.warn("Error using ProtonManager fallback", { error: String(error) });
+			}
+		}
 
 		return builds;
 	}
@@ -425,9 +497,40 @@ export class GameLauncher implements GameLauncherInterface {
 		variant: string,
 		version: string,
 	): string[] {
-		// Since ProtonDetector now provides the exact directory name as the version,
-		// we can just use the version directly.
-		return [version];
+		// Generate multiple possible directory name patterns
+		const possibleNames: string[] = [];
+		
+		// First, try the version as-is (exact match)
+		possibleNames.push(version);
+		
+		// For proton-ge, handle various naming patterns
+		if (variant === "proton-ge") {
+			// If version doesn't start with GE-Proton, try adding it
+			if (!version.toLowerCase().startsWith("ge-proton")) {
+				possibleNames.push(`GE-Proton${version}`);
+				possibleNames.push(`GE-Proton-${version}`);
+			}
+			
+			// If version starts with GE-Proton, also try without the prefix
+			if (version.toLowerCase().startsWith("ge-proton")) {
+				const withoutPrefix = version.replace(/^ge-proton[-_]?/i, "");
+				if (withoutPrefix) {
+					possibleNames.push(withoutPrefix);
+					possibleNames.push(`GE-Proton${withoutPrefix}`);
+					possibleNames.push(`GE-Proton-${withoutPrefix}`);
+				}
+			}
+			
+			// Try common variations
+			const cleanVersion = version.replace(/^ge-proton[-_]?/i, "");
+			if (cleanVersion && cleanVersion !== version) {
+				possibleNames.push(`Proton-GE-${cleanVersion}`);
+				possibleNames.push(`proton-ge-${cleanVersion}`);
+			}
+		}
+		
+		// Remove duplicates and return
+		return [...new Set(possibleNames)];
 	}
 
 	/**
