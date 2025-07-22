@@ -83,12 +83,8 @@ export class GameLauncher implements GameLauncherInterface {
 			return;
 		}
 
-		// Check if Proton is enabled
-		if (!protonOptions?.enabled) {
-			this.logger?.debug?.("Proton support disabled");
-			return;
-		}
-
+		// Always initialize ProtonManager on Linux to support launch-specific proton options
+		// even when global proton is not enabled
 		try {
 			this.protonManager = new ProtonManager();
 
@@ -100,9 +96,10 @@ export class GameLauncher implements GameLauncherInterface {
 			}
 
 			this.logger?.info?.("ProtonManager initialized", {
-				installPath: protonOptions.installPath,
-				autoDetect: protonOptions.autoDetect,
-				preferredVariant: protonOptions.preferredVariant,
+				globalEnabled: protonOptions?.enabled || false,
+				installPath: protonOptions?.installPath,
+				autoDetect: protonOptions?.autoDetect,
+				preferredVariant: protonOptions?.preferredVariant,
 			});
 		} catch (error) {
 			this.logger?.error?.("Failed to initialize ProtonManager", {
@@ -1007,15 +1004,27 @@ export class GameLauncher implements GameLauncherInterface {
 		const platform = getPlatform();
 		const globalEnabled = this.options.proton?.enabled;
 		const launchEnabled = options.proton?.enabled;
+		const hasLaunchProtonConfig = options.proton !== undefined;
 		const isExe = executable.toLowerCase().endsWith(".exe");
 		this.logger.debug("shouldUseProton checks:", {
 			platform,
 			globalEnabled,
 			launchEnabled,
+			hasLaunchProtonConfig,
 			isExe,
 			executable,
 		});
 		if (platform !== "linux") return false;
+
+		// If launch-specific proton config is provided, it takes priority
+		if (hasLaunchProtonConfig) {
+			if (launchEnabled === false) return false;
+			if (launchEnabled === true) return true;
+			// If launch proton config exists but enabled is undefined, use proton for .exe files
+			return isExe;
+		}
+
+		// Fall back to global configuration
 		if (!globalEnabled) return false;
 		if (launchEnabled === false) return false;
 		if (launchEnabled === true) return true;
